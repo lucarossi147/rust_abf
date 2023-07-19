@@ -27,7 +27,7 @@ pub fn get_file_signature(path: &str) -> Result<AbfType, std::io::Error> {
     })       
 }
 
-pub fn get_sweep_number(path: &str)->Result<i32, std::io::Error>{
+pub fn get_sweep_number(path: &str)->Result<u32, std::io::Error>{
     let mut file = File::open(path)?;
     // Seek to the desired position (12 bytes offset)
     file.seek(SeekFrom::Start(12))?;
@@ -36,7 +36,7 @@ pub fn get_sweep_number(path: &str)->Result<i32, std::io::Error>{
     let mut buffer = [0u8; 4];
     file.read_exact(&mut buffer)?;
     // Convert the bytes to an integer
-    Ok(i32::from_le_bytes(buffer))
+    Ok(u32::from_le_bytes(buffer))
 }
 
 #[cfg(test)]
@@ -87,5 +87,4 @@ mod tests {
             _ => println!("not found"),
         }
     }
-
 }
