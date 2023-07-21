@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 memmap = "0.7.0"
+byteorder = "1.4.0"
