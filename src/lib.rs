@@ -87,17 +87,9 @@ fn from_byte_array_to_u32(mmap: &Mmap, from: usize) -> Result<u32, ()> {
     }
 }
 
-fn from_byte_to_i8(mmap: &Mmap, from: usize) -> i8 {
-    mmap[from] as i8
-}
-
 fn from_byte_array_to_u16(mmap: &Mmap, from: usize) -> u16 {
     let mut bytes_slice = &mmap[from..from + std::mem::size_of::<u16>()];
     bytes_slice.read_u16::<LittleEndian>().unwrap()
-}
-
-fn from_bytes_array_to_string2(vec: &Vec<u8>, from: usize, len: usize) -> Result<&str, str::Utf8Error>{
-    str::from_utf8(&vec[from..from+len])
 }
 
 fn get_file_signature(file_signature_str: &str) -> AbfType {
@@ -106,17 +98,4 @@ fn get_file_signature(file_signature_str: &str) -> AbfType {
         "ABF2" => AbfType::AbfV2,
         _ => AbfType::Invalid,
     }
-}
-
-
-pub fn get_sweep_number(path: &str)->Result<u32, std::io::Error>{
-    let mut file = File::open(path)?;
-    // Seek to the desired position (12 bytes offset)
-    file.seek(SeekFrom::Start(12))?;
-
-    // Read 4 bytes from the file into a buffer
-    let mut buffer = [0u8; 4];
-    file.read_exact(&mut buffer)?;
-    // Convert the bytes to an integer
-    Ok(u32::from_le_bytes(buffer))
 }
