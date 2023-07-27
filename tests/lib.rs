@@ -16,7 +16,7 @@ mod tests {
         assert_eq!(abf.file_start_time_ms, 60198203);
         assert_eq!(abf.file_type, 1);
         assert_eq!(abf.data[0], -2147);
-        // assert!(elapsed_time.as_millis()<2);
+        assert!(elapsed_time.as_millis()<100);
     }
 
     #[test]
@@ -31,6 +31,23 @@ mod tests {
         assert_eq!(abf.file_start_time_ms, 56871040);
         assert_eq!(abf.file_type, 1);
     }
+
+    // #[test]
+    // fn test_abfv2_heavy(){
+    //     let start_time = Instant::now();
+    //     let abf = Abf::new("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf");
+    //     let elapsed_time = start_time.elapsed();
+    //     println!("{:?}", elapsed_time);
+    //     assert!(matches!(abf.file_signature, AbfType::AbfV2));
+    //     // assert_eq!(abf.actual_episodes, 3);
+    //     // assert_eq!(abf.file_info_size, 512);
+    //     // assert_eq!(abf.file_start_date, 20141008);
+    //     // assert_eq!(abf.file_start_time_ms, 60198203);
+    //     // assert_eq!(abf.file_type, 1);
+
+    //     // assert_eq!(abf.data[0], -2147);
+    //     // assert!(elapsed_time.as_millis()<200);
+    // }
 
     // #[test]
     // fn test_abfv1(){

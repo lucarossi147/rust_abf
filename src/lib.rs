@@ -1,9 +1,8 @@
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
 use std::str;
 use memmap::Mmap;
 use byteorder::{LittleEndian, ReadBytesExt};
-
+use rayon::prelude::*;
 
 struct SectionProducer {
     mmap: Mmap,
@@ -38,7 +37,8 @@ impl<'a> Section<'a> {
     pub fn read(&self) -> Vec<i16> {
         let from = usize::try_from(self.block_number).unwrap();
         let to = usize::try_from(self.block_number+self.item_count).unwrap();
-        self.mmap[from..=to].chunks_exact(2).map(|c|byte_array_to_i16(c)).collect()
+        let byte_count = usize::try_from(self.byte_count).unwrap();
+        self.mmap[from..=to].par_chunks_exact(byte_count).map(|c|byte_array_to_i16(c)).collect()
     } 
 }
 
