@@ -3,6 +3,7 @@ use std::str;
 use memmap::Mmap;
 use byteorder::{LittleEndian, ReadBytesExt};
 use rayon::prelude::*;
+use std::thread;
 
 struct SectionProducer {
     mmap: Mmap,
@@ -12,6 +13,16 @@ impl SectionProducer {
     pub fn produce_from(&self, from: usize) -> Section {
         Section::new(&self.mmap, from)
     } 
+}
+
+struct Data {
+    pub channel: i32,
+    pub values: Vec<i16>
+}
+impl Data {
+    pub fn new(channel: i32, values:Vec<i16>)->Self{
+        Self { channel, values }
+    }
 }
 
 struct Section<'a>{
@@ -34,11 +45,18 @@ impl<'a> Section<'a> {
         }
     }
 
-    pub fn read(&self) -> Vec<i16> {
+    pub fn read(&self, number_of_channels: u32) -> Vec<Data> {
         let from = usize::try_from(self.block_number).unwrap();
         let to = usize::try_from(self.block_number+self.item_count).unwrap();
         let byte_count = usize::try_from(self.byte_count).unwrap();
-        self.mmap[from..=to].par_chunks_exact(byte_count).map(|c|byte_array_to_i16(c)).collect()
+        let number_of_channels = usize::try_from(number_of_channels).unwrap();
+        let partial_res = self.mmap[from..=to].par_chunks_exact(byte_count).map(|c|byte_array_to_i16(c));
+        match number_of_channels {
+            1 => vec![Data::new(0, partial_res.collect::<Vec<i16>>())],
+            n => {
+                partial_res.fold(identity, fold_op)
+            }
+        }
     } 
 }
 
@@ -58,8 +76,7 @@ pub struct Abf{
     pub crc_enable: u16,                    //  34
     pub file_crc: u32,                      //  38
     pub file_guid: u32,                     //  42
-
-    pub data: Vec<i16>,
+    data: Vec<Data>,
 }
 
 impl Abf {
@@ -108,6 +125,7 @@ impl Abf {
 
         // println!("{:?}", data_section.read().into_iter().take(10).collect::<Vec<i16>>());
         let data = data_section.read();
+
         Abf {
             file_signature,
             file_version_number,
