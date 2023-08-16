@@ -3,7 +3,6 @@ use std::str;
 use memmap::Mmap;
 use byteorder::{LittleEndian, ReadBytesExt};
 use rayon::prelude::*;
-use std::thread;
 
 struct SectionProducer {
     mmap: Mmap,
@@ -15,12 +14,13 @@ impl SectionProducer {
     } 
 }
 
+#[derive(Debug, Clone)]
 struct Data {
-    pub channel: i32,
+    pub channel: usize,
     pub values: Vec<i16>
 }
 impl Data {
-    pub fn new(channel: i32, values:Vec<i16>)->Self{
+    pub fn new(channel: usize, values:Vec<i16>)->Self{
         Self { channel, values }
     }
 }
@@ -50,11 +50,46 @@ impl<'a> Section<'a> {
         let to = usize::try_from(self.block_number+self.item_count).unwrap();
         let byte_count = usize::try_from(self.byte_count).unwrap();
         let number_of_channels = usize::try_from(number_of_channels).unwrap();
-        let partial_res = self.mmap[from..=to].par_chunks_exact(byte_count).map(|c|byte_array_to_i16(c));
+        let partial_res = self.mmap[from..to]
+        .par_chunks_exact(byte_count)
+        .map(|c|byte_array_to_i16(c))
+        .collect::<Vec<i16>>();
+        println!("{:?}", &partial_res[partial_res.len()-10..]);
         match number_of_channels {
-            1 => vec![Data::new(0, partial_res.collect::<Vec<i16>>())],
+            1 => vec![Data::new(0, partial_res)],
             n => {
-                partial_res.fold(identity, fold_op)
+                let result_data: Vec<Data> = partial_res
+                .par_iter()
+                .enumerate()
+                .fold(|| vec![Data { channel: 0, values: Vec::new() }; n], |mut acc, (index, &value)| {
+                    let channel_index = index % n;
+                    acc[channel_index].channel = channel_index;
+                    acc[channel_index].values.push(value);
+                    acc
+                })
+                .reduce_with(|acc1, acc2| {
+                    acc1.into_iter()
+                    .zip(acc2)
+                    .map(|(mut data1,mut data2)|{
+                        data1.values.append(&mut data2.values);
+                        data1
+                    })
+                    .collect()
+                    // acc1.iter_mut()
+                    // .zip(acc2.iter())
+                    // .for_each(|(data1, data2)| data1.values.extend(data2.values.iter().cloned()));
+                    // acc1
+                })
+                .unwrap();
+                result_data
+                // let mut processed_data: Vec<Data> = vec![Data { channel: 0, values: Vec::new() }; n];
+
+                // for (index, &value) in partial_res.iter().enumerate() {
+                //     let channel_index = index % n;
+                //     processed_data[channel_index].channel = channel_index;
+                //     processed_data[channel_index].values.push(value);
+                // }
+                // processed_data
             }
         }
     } 
@@ -124,8 +159,18 @@ impl Abf {
         let stats_section = sec_prod.produce_from(348);
 
         // println!("{:?}", data_section.read().into_iter().take(10).collect::<Vec<i16>>());
-        let data = data_section.read();
-
+        let channels_num = match file_signature {
+            AbfType::AbfV1 => todo!(),
+            AbfType::AbfV2 => adc_section.item_count,
+            AbfType::Invalid => panic!("An invalid abf does not have a number of channels")
+        };
+        println!("Channels are {:?}", channels_num);
+        let data = data_section.read(channels_num);
+        println!("I have {:?} data", data.len());
+        for d in &data {
+            println!("channel: {:?}, {:?}.....{:?}", d.channel, &d.values[0..10], &d.values[d.values.len()-1]);
+        }
+        println!("total data: {:?}", data.iter().map(|d| d.values.len()).sum::<usize>());
         Abf {
             file_signature,
             file_version_number,
