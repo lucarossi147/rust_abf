@@ -75,21 +75,9 @@ impl<'a> Section<'a> {
                         data1
                     })
                     .collect()
-                    // acc1.iter_mut()
-                    // .zip(acc2.iter())
-                    // .for_each(|(data1, data2)| data1.values.extend(data2.values.iter().cloned()));
-                    // acc1
                 })
                 .unwrap();
                 result_data
-                // let mut processed_data: Vec<Data> = vec![Data { channel: 0, values: Vec::new() }; n];
-
-                // for (index, &value) in partial_res.iter().enumerate() {
-                //     let channel_index = index % n;
-                //     processed_data[channel_index].channel = channel_index;
-                //     processed_data[channel_index].values.push(value);
-                // }
-                // processed_data
             }
         }
     } 
@@ -166,6 +154,11 @@ impl Abf {
         };
         println!("Channels are {:?}", channels_num);
         let data = data_section.read(channels_num);
+
+        // let scale_factors = (0..channels_num).into_iter()
+        // .map(|i| i=1)
+        // .map(|i| i/)
+
         println!("I have {:?} data", data.len());
         for d in &data {
             println!("channel: {:?}, {:?}.....{:?}", d.channel, &d.values[0..10], &d.values[d.values.len()-1]);
