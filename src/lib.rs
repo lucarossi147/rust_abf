@@ -52,32 +52,18 @@ impl<'a> Section<'a> {
         let number_of_channels = usize::try_from(number_of_channels).unwrap();
         let partial_res = self.mmap[from..to]
         .par_chunks_exact(byte_count)
-        .map(|c|byte_array_to_i16(c))
-        .collect::<Vec<i16>>();
-        println!("{:?}", &partial_res[partial_res.len()-10..]);
+        .map(|c|byte_array_to_i16(c));
         match number_of_channels {
-            1 => vec![Data::new(0, partial_res)],
+            1 => vec![Data::new(0, partial_res .collect::<Vec<i16>>())],
             n => {
-                let result_data: Vec<Data> = partial_res
-                .par_iter()
-                .enumerate()
-                .fold(|| vec![Data { channel: 0, values: Vec::new() }; n], |mut acc, (index, &value)| {
-                    let channel_index = index % n;
-                    acc[channel_index].channel = channel_index;
-                    acc[channel_index].values.push(value);
-                    acc
-                })
-                .reduce_with(|acc1, acc2| {
-                    acc1.into_iter()
-                    .zip(acc2)
-                    .map(|(mut data1,mut data2)|{
-                        data1.values.append(&mut data2.values);
-                        data1
-                    })
-                    .collect()
-                })
-                .unwrap();
-                result_data
+                let partial_res_with_idxs = partial_res.enumerate().map(|(i, e)| (i%n, e));
+                // TODO, the last thing that comes to my mind to speedup even more the program is making the partial_res_with_idxs mutable and remove at every iteration 
+                // the entries that have been used (if channel 0 is been used, then we can remove every element of that channel and the next iteration will be 1/n faster)
+                (0..n).into_iter().map(|c| {
+                    Data::new(c, partial_res_with_idxs.clone()
+                    .filter_map(|(idx, e)| if idx == c {Some(e)} else {None})
+                    .collect())
+                }).collect()
             }
         }
     } 
