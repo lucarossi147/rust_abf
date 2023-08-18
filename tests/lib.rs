@@ -11,17 +11,13 @@ mod tests {
         let elapsed_time = start_time.elapsed();
         println!("{:?}", elapsed_time);
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
-        // assert_eq!(abf.actual_episodes, 3);
-        // assert_eq!(abf.file_info_size, 512);
-        // assert_eq!(abf.file_start_date, 20141008);
-        // assert_eq!(abf.file_start_time_ms, 60198203);
-        // assert_eq!(abf.file_type, 1);
         let ch_num = abf.get_channel_count();
         for ch in 0..ch_num {
-            let data: &Vec<i16> = abf.get_data(ch).unwrap();
+            let data = abf.get_data(ch).unwrap();
             assert_eq!(&data.len(), &900000);
-            println!("{:?} ... {:?}", &data[..10], &data[&data.len()-10..], );
+            // println!("{:?} ... {:?}", &data[..10], &data[&data.len()-10..], );
         }
+        print!("{:?}, {:?}", elapsed_time, start_time.elapsed().as_millis());
         // assert!(elapsed_time.as_millis()<100);
     }
 
@@ -39,7 +35,7 @@ mod tests {
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
         let ch_num = abf.get_channel_count();
         for ch in 0..ch_num {
-            let data: &Vec<i16> = abf.get_data(ch).unwrap();
+            let data = abf.get_data(ch).unwrap();
             assert_eq!(&data.len(), &125000);
             println!("{:?} ... {:?}", &data[..10], &data[&data.len()-10..], );
         }
