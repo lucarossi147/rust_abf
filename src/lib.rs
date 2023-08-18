@@ -21,6 +21,7 @@ pub struct AbfBuilder;
 impl AbfBuilder {
     pub fn new(filepath: &str)-> Result<impl Abf, Error> {
         let memmap =  unsafe { Mmap::map(&File::open(filepath)?)? };
+        println!("{:?}", memmap.len());
         let file_signature_str = cu::from_bytes_array_to_string(&memmap, 0, 4);
         match file_signature_str {
             Ok(v) => match v {
