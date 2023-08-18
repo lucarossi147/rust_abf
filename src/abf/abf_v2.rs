@@ -1,37 +1,32 @@
 use std::collections::HashMap;
-use crate::mmap;
-use super::abf_kind::AbfKind;
+use crate::AbfKind;
 use super::Abf;
 use crate::conversion_util as cu;
 mod section;
-
+use memmap::Mmap;
 use section::section_producer::SectionProducer; 
+
 pub struct AbfV2{
-    pub file_signature: AbfKind,            //  0
-    pub file_version_number: Vec<i8>,       //  4
-    pub file_info_size: u32,                //  8
-    pub actual_episodes: u32,               //  12
-    pub file_start_date: u32,               //  16
-    pub file_start_time_ms: u32,            //  20
-    pub stopwatch_time: u32,                //  24
-    pub file_type: u16,                     //  28
-    pub data_format: u16,                   //  30
-    pub simultaneus_scan: u16,              //  32
-    pub crc_enable: u16,                    //  34
-    pub file_crc: u32,                      //  38
-    pub file_guid: u32,                     //  42
+    file_signature: AbfKind,            //  0
+    file_version_number: Vec<i8>,       //  4
+    file_info_size: u32,                //  8
+    actual_episodes: u32,               //  12
+    file_start_date: u32,               //  16
+    file_start_time_ms: u32,            //  20
+    stopwatch_time: u32,                //  24
+    file_type: u16,                     //  28
+    data_format: u16,                   //  30
+    simultaneus_scan: u16,              //  32
+    crc_enable: u16,                    //  34
+    file_crc: u32,                      //  38
+    file_guid: u32,                     //  42
     data: HashMap<usize, Vec<i16>>,
+    abf_kind: AbfKind,
+    number_of_channels: usize,
 }
 
-
-// impl Abf for AbfV2{
-impl AbfV2{
-    fn open(filepath: &str) -> Self {
-        let memmap = mmap(filepath).unwrap();
-        // let file_signature = match cu::from_bytes_array_to_string(&memmap, 0, 4) {
-        //     Ok(v) => get_file_signature(v),
-        //     _ => return Err("File is not an abf".to_string()),
-        // };    
+impl AbfV2 {
+    pub fn new(memmap:Mmap, abf_kind: AbfKind) -> Self {
         let file_version_number = (4..=8).map(|i| memmap[i] as i8).collect();
         let file_info_size = cu::from_byte_array_to_u32(&memmap, 8).unwrap();
         let actual_episodes = cu::from_byte_array_to_u32(&memmap, 12).unwrap();
@@ -70,11 +65,11 @@ impl AbfV2{
         // let stats_section = sec_prod.produce_from(348);
 
         // println!("{:?}", data_section.read().into_iter().take(10).collect::<Vec<i16>>());
-        let channels_num = adc_section.get_channel_count();
-        // println!("Channels are {:?}", channels_num);
-        let data = data_section.read(channels_num);
+        let number_of_channels = usize::try_from(adc_section.get_channel_count()).unwrap();
+        // println!("Channels are {:?}", number_of_channels);
+        let data = data_section.read(number_of_channels);
 
-        // let scale_factors = (0..channels_num).into_iter()
+        // let scale_factors = (0..number_of_channels).into_iter()
         // .map(|i| i=1)
         // .map(|i| i/)
 
@@ -98,12 +93,22 @@ impl AbfV2{
             file_crc,
             file_guid,
             data,
+            abf_kind,
+            number_of_channels,
         }
     }
+}
 
-    // fn get_data(self, channel: usize) -> Option<&'static Vec<i16>>{
-    //    self.data.get(&channel)
-    // }
+impl Abf for AbfV2{
 
-    // fn get_file_signature(self, file_signature_str: &str) -> AbfKind;
+    fn get_data(&self, channel: usize) -> Option<&Vec<i16>> {
+       self.data.get(&channel)
+    }
+
+    fn get_file_signature(&self) -> AbfKind {
+        self.file_signature
+    }
+    fn get_channel_count(&self) -> usize {
+        self.number_of_channels
+    }
 }

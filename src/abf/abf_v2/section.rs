@@ -42,7 +42,7 @@ impl<'a, T> Section<'a, T> {
 }
 
 impl<'a, DataSectionType> Section<'a, DataSectionType>{
-    pub fn read(&self, number_of_channels: u32) -> HashMap<usize, Vec<i16>> {
+    pub fn read(&self, number_of_channels: usize) -> HashMap<usize, Vec<i16>> {
         let from = usize::try_from(self.block_number).unwrap();
         let to = usize::try_from(self.block_number+self.item_count).unwrap();
         let byte_count = usize::try_from(self.byte_count).unwrap();
