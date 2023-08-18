@@ -26,3 +26,18 @@ pub fn byte_array_to_i16(ba: &[u8]) -> i16 {
     let mut ba = ba;
     ba.read_i16::<LittleEndian>().unwrap()
 }
+
+pub fn mmap_to_i16(mmap: &Mmap, from: usize) -> i16 {
+    let mut ba = &mmap[from..from + std::mem::size_of::<i16>()];
+    ba.read_i16::<LittleEndian>().unwrap()
+}
+
+pub fn mmap_to_f32(mmap: &Mmap, from: usize) -> f32 {
+    let mut ba = &mmap[from..from + std::mem::size_of::<f32>()];
+    ba.read_f32::<LittleEndian>().unwrap()
+}
+
+pub fn mmap_to_i32(mmap: &Mmap, from: usize) -> i32 {
+    let mut ba = &mmap[from..from + std::mem::size_of::<i32>()];
+    ba.read_i32::<LittleEndian>().unwrap()
+}

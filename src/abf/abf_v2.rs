@@ -78,6 +78,17 @@ impl AbfV2 {
         //     println!("channel: {:?}, {:?}.....{:?}", d.channel, &d.values[0..10], &d.values[d.values.len()-1]);
         // }
         // println!("total data: {:?}", data.iter().map(|d| d.values.len()).sum::<usize>());
+
+
+        // let dataByteStart = data_section.[0]*BLOCKSIZE;
+        // let dataPointCount = _sectionMap.DataSection[2];
+        // let channelCount = _sectionMap.ADCSection[2];
+        // let dataRate = (1e6 / _protocolSection.fADCSequenceInterval)
+        // let dataSecPerPoint = 1/dataRate;
+        // let sweepCount = lActualEpisodes;
+        protocol_section.print_info();
+        data_section.print_info();
+
         Self {
             file_signature: AbfKind::AbfV2,
             file_version_number,
