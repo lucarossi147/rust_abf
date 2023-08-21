@@ -41,7 +41,3 @@ pub fn mmap_to_i32(mmap: &Mmap, from: usize) -> i32 {
     let mut ba = &mmap[from..from + std::mem::size_of::<i32>()];
     ba.read_i32::<LittleEndian>().unwrap()
 }
-
-pub fn mmap_to_u8(mmap: &Mmap, from: usize) -> u8 {
-    mmap[from] as u8
-}

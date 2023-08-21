@@ -65,17 +65,8 @@ impl AbfV2 {
         // let annotation_section = sec_prod.produce_from(332);
         // let stats_section = sec_prod.produce_from(348);
 
-        // println!("{:?}", data_section.read().into_iter().take(10).collect::<Vec<i16>>());
         let number_of_channels = adc_section.get_channel_count();
-        // println!("Channels are {:?}", number_of_channels);
         let data = data_section.read(number_of_channels);
-
-        // println!("I have {:?} data", data.len());
-        // for d in &data {
-        //     println!("channel: {:?}, {:?}.....{:?}", d.channel, &d.values[0..10], &d.values[d.values.len()-1]);
-        // }
-        // println!("total data: {:?}", data.iter().map(|d| d.values.len()).sum::<usize>());
-
 
         // let dataByteStart = data_section.[0]*BLOCKSIZE;
         // let dataPointCount = _sectionMap.DataSection[2];
@@ -86,51 +77,20 @@ impl AbfV2 {
         let data_sec_per_point = 1.0 / data_rate;
         let sweep_count = actual_episodes;
 
-        let scaling_factors = (0..number_of_channels).into_iter()
-        .map(|_| 1.0 as f32)
+        let scaling_factors = (0..number_of_channels)
+        .map(|_| 1.0_f32)
         .enumerate()
         .map(|(ch, sf)| (sf, &adc_info[ch]))
-        .map(|(sf, ai)| (sf / ai.instrument_scale_factor as f32, ai))
-        .map(|(sf, ai)| (sf/ai.signal_gain as f32, ai))
-        .map(|(sf, ai)| (sf/ai.adc_programmable_gain as f32, ai))
-        .map(|(sf, ai)| if ai.telegraph_enable != 0 {(sf/ai.telegraph_addit_gain as f32, ai)} else {(sf, ai)})
-        .map(|(sf, ai)| (sf* protocol_section.adc_range() as f32, ai))
+        .map(|(sf, ai)| (sf / ai.instrument_scale_factor, ai))
+        .map(|(sf, ai)| (sf/ai.signal_gain, ai))
+        .map(|(sf, ai)| (sf/ai.adc_programmable_gain, ai))
+        .map(|(sf, ai)| if ai.telegraph_enable != 0 {(sf/ai.telegraph_addit_gain, ai)} else {(sf, ai)})
+        .map(|(sf, ai)| (sf* protocol_section.adc_range(), ai))
         .map(|(sf, ai)| (sf/ protocol_section.adc_resolution() as f32, ai))
-        .map(|(sf, ai)| (sf + ai.instrument_offset as f32, ai))
-        .map(|(sf, ai)| (sf - ai.signal_offset as f32, ai))
+        .map(|(sf, ai)| (sf + ai.instrument_offset, ai))
+        .map(|(sf, ai)| (sf - ai.signal_offset, ai))
         .map(|(sf, _)| sf)
         .collect::<Vec<f32>>();
-
-        // for ch in 0..number_of_channels {
-        //     let ai =  &adc_info[ch];
-        //     println!("{:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?}, {:?},",
-        //     ai.instrument_scale_factor as f64,
-        //     ai.signal_gain as f64,
-        //     ai.adc_programmable_gain as f64,
-        //     ai.telegraph_enable,
-        //     ai.telegraph_addit_gain as f64,
-        //     protocol_section.adc_range() as f64,
-        //     protocol_section.adc_resolution() as f64,
-        //     ai.instrument_offset as f64,
-        //     ai.signal_offset,
-        // );
-        // }
-
-
-        println!("{:?},{:?}, ", &scaling_factors, protocol_section.adc_resolution());
-        // for i in range(channelCount):
-        // scaleFactors[i] /= fInstrumentScaleFactor[i]
-        // scaleFactors[i] /= fSignalGain[i]
-        // scaleFactors[i] /= fADCProgrammableGain[i]
-        // if nTelegraphEnable:
-        //     scaleFactors[i] /= fTelegraphAdditGain[i]
-        // scaleFactors[i] *= fADCRange
-        // scaleFactors[i] /= lADCResolution
-        // scaleFactors[i] += fInstrumentOffset[i]
-        // scaleFactors[i] -= fSignalOffset[i]
-
-        // protocol_section.print_info();
-        // data_section.print_info();
 
         Self {
             file_signature: AbfKind::AbfV2,
@@ -157,10 +117,7 @@ impl AbfV2 {
 impl Abf for AbfV2{
 
     fn get_data(&self, channel: usize) -> Option<Vec<f32>> {
-        match self.data.get(&channel) {
-            Some(values)=> Some(values.into_iter().map(|v| *v as f32 * self.scaling_factors[channel]).collect::<Vec<f32>>()),
-            None=> None 
-        }
+        self.data.get(&channel).map(|values| values.iter().map(|v| *v as f32 * self.scaling_factors[channel]).collect::<Vec<f32>>())
     }
 
     fn get_file_signature(&self) -> AbfKind {

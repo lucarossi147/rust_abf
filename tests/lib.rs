@@ -7,15 +7,15 @@ mod tests {
     #[test]
     fn test_abfv2_1(){
         let start_time = Instant::now();
-        let abf = AbfBuilder::new("tests/test_abf/14o08011_ic_pair.abf").unwrap();
+        let abf = AbfBuilder::from_file("tests/test_abf/14o08011_ic_pair.abf").unwrap();
         let elapsed_time = start_time.elapsed();
-        println!("{:?}", elapsed_time);
+        // println!("{:?}", elapsed_time);
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
         let ch_num = abf.get_channel_count();
         for ch in 0..ch_num {
             let data = abf.get_data(ch).unwrap();
             assert_eq!(&data.len(), &1800000);
-            println!("{:?} ... {:?}", &data[..10], &data[&data.len()-10..], );
+            // println!("{:?} ... {:?}", &data[..10], &data[&data.len()-10..], );
         }
         // print!("{:?}, {:?}", elapsed_time, start_time.elapsed().as_millis());
         // assert!(elapsed_time.as_millis()<100);
@@ -24,7 +24,7 @@ mod tests {
     #[test]
     fn test_abfv2_2(){
         let start_time = Instant::now();
-        let abf = AbfBuilder::new("tests/test_abf/18425108.abf").unwrap();
+        let abf = AbfBuilder::from_file("tests/test_abf/18425108.abf").unwrap();
         let elapsed_time = start_time.elapsed();
         println!("{:?}", elapsed_time);
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
@@ -40,7 +40,7 @@ mod tests {
     // #[test]
     // fn test_abfv2_heavy(){
     //     let start_time = Instant::now();
-    //     let abf = AbfBuilder::new("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf");
+    //     let abf = AbfBuilder::from_file("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf");
     //     let elapsed_time = start_time.elapsed();
     //     println!("{:?}", elapsed_time);
     //     assert!(elapsed_time.as_millis()<900);
