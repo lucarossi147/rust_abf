@@ -34,7 +34,6 @@ mod tests {
             assert_eq!(&data.len(), &250000);
         }
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
-
     }
 
     // #[test]
