@@ -43,7 +43,7 @@ mod tests {
     //     let abf = AbfBuilder::from_file("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf");
     //     let elapsed_time = start_time.elapsed();
     //     println!("{:?}", elapsed_time);
-    //     assert!(elapsed_time.as_millis()<900);
+    //     // assert!(elapsed_time.as_millis()<900);
     // }
 
     // #[test]

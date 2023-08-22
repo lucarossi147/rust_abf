@@ -28,7 +28,7 @@ pub struct AbfV2{
 
 impl AbfV2 {
     pub fn new(memmap:Mmap, abf_kind: AbfKind) -> Self {
-        let file_version_number = (4..=8).map(|i| memmap[i] as i8).collect();
+        let file_version_number = (4..8).map(|i| memmap[i] as i8).collect();
         let file_info_size = cu::from_byte_array_to_u32(&memmap, 8).unwrap();
         let actual_episodes = cu::from_byte_array_to_u32(&memmap, 12).unwrap();
         let file_start_date = cu::from_byte_array_to_u32(&memmap, 16).unwrap();
@@ -38,8 +38,16 @@ impl AbfV2 {
         let data_format: u16 = cu::from_byte_array_to_u16(&memmap, 30);
         let simultaneus_scan: u16 = cu::from_byte_array_to_u16(&memmap, 32);
         let crc_enable: u16 = cu::from_byte_array_to_u16(&memmap, 34);
-        let file_crc: u32 = cu::from_byte_array_to_u32(&memmap, 38).unwrap();
-        let file_guid: u32= cu::from_byte_array_to_u32(&memmap, 42).unwrap();
+        let file_crc: u32 = cu::from_byte_array_to_u32(&memmap, 36).unwrap();
+        let file_guid: u32= cu::from_byte_array_to_u32(&memmap, 40).unwrap();
+        let _unknown1 = cu::from_byte_array_to_u32(&memmap, 44).unwrap();
+        let _unknown2 = cu::from_byte_array_to_u32(&memmap, 48).unwrap();
+        let _unknown3 = cu::from_byte_array_to_u32(&memmap, 52).unwrap();
+        let creator_version = cu::from_byte_array_to_u32(&memmap, 56).unwrap();
+        let creator_name_index = cu::from_byte_array_to_u32(&memmap, 60).unwrap();
+        let modifier_version = cu::from_byte_array_to_u32(&memmap, 64).unwrap();
+        let modifier_name_index = cu::from_byte_array_to_u32(&memmap, 68).unwrap();
+        let protocol_path_index = cu::from_byte_array_to_u32(&memmap, 72).unwrap();        
 
         // useful sections
         let sec_prod = SectionProducer::new(&memmap);
@@ -72,7 +80,7 @@ impl AbfV2 {
         // let dataPointCount = _sectionMap.DataSection[2];
         // let channelCount = _sectionMap.ADCSection[2];
         // let dataRate = (1e6 / _protocolSection.fADCSequenceInterval)
-        let adc_info = adc_section.get_adc_infos();
+        let adc_infos = adc_section.get_adc_infos();
         let data_rate = 1e6 / protocol_section.adc_sequence_interval();
         let data_sec_per_point = 1.0 / data_rate;
         let sweep_count = actual_episodes;
@@ -80,7 +88,7 @@ impl AbfV2 {
         let scaling_factors = (0..number_of_channels)
         .map(|_| 1.0_f32)
         .enumerate()
-        .map(|(ch, sf)| (sf, &adc_info[ch]))
+        .map(|(ch, sf)| (sf, &adc_infos[ch]))
         .map(|(sf, ai)| (sf / ai.instrument_scale_factor, ai))
         .map(|(sf, ai)| (sf/ai.signal_gain, ai))
         .map(|(sf, ai)| (sf/ai.adc_programmable_gain, ai))
@@ -90,8 +98,20 @@ impl AbfV2 {
         .map(|(sf, ai)| (sf + ai.instrument_offset, ai))
         .map(|(sf, ai)| (sf - ai.signal_offset, ai))
         .map(|(sf, _)| sf)
-        .collect::<Vec<f32>>();
+        .collect();
 
+        // let strs = strings_section.read_indexed_strings();
+        let strs = strings_section.read_indexed_strings();
+        // strs.iter().for_each(|s| println!("{}",s));
+
+        // println!("always blank for me, not sure what it is for: {}", &strs[modifier_name_index as usize]);
+        // println!("name of program used to create the ABF: {}", &strs[creator_name_index as usize]);
+        // println!("path to the protocol used: {}", &strs[protocol_path_index as usize]);
+        // // println!("file commend defined in the waveform editor: {}", &strs[ as usize]);
+        // for adc_info in adc_infos{
+        //     println!("name/label of the ADC: {}", &strs[adc_info.adc_channel_name_index as usize]);
+        //     println!("units of the ADC: {}", &strs[adc_info.adc_units_index as usize]);            
+        // }
         Self {
             file_signature: AbfKind::AbfV2,
             file_version_number,
@@ -117,7 +137,15 @@ impl AbfV2 {
 impl Abf for AbfV2{
 
     fn get_data(&self, channel: usize) -> Option<Vec<f32>> {
-        self.data.get(&channel).map(|values| values.iter().map(|v| *v as f32 * self.scaling_factors[channel]).collect::<Vec<f32>>())
+        let data = self.data
+        .get(&channel)
+        .map(|values| values.iter().map(|v| *v as f32));
+        // data in int, needs to be multiplied for the scaling factors
+        if self.data_format == 0 {
+            data.map(|values| values.map(|v| v * self.scaling_factors[channel]).collect())
+        } else {
+            data.map(|values| values.collect())
+        }
     }
 
     fn get_file_signature(&self) -> AbfKind {

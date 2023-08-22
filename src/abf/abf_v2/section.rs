@@ -5,6 +5,8 @@ pub mod section_producer;
 pub mod adc_section;
 pub mod protocol_section;
 pub mod data_section;
+pub mod strings_sections;
+
 pub struct ProtocolSectionType;
 pub struct AdcSectionType;
 pub struct DacSectionType;
