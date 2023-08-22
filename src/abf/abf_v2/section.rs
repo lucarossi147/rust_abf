@@ -6,6 +6,7 @@ pub mod adc_section;
 pub mod protocol_section;
 pub mod data_section;
 pub mod strings_sections;
+pub mod dac_section;
 
 pub struct ProtocolSectionType;
 pub struct AdcSectionType;

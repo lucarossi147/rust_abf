@@ -81,6 +81,7 @@ impl AbfV2 {
         // let channelCount = _sectionMap.ADCSection[2];
         // let dataRate = (1e6 / _protocolSection.fADCSequenceInterval)
         let adc_infos = adc_section.get_adc_infos();
+        let dacs_info = dac_section.get_dacs_info();
         let data_rate = 1e6 / protocol_section.adc_sequence_interval();
         let data_sec_per_point = 1.0 / data_rate;
         let sweep_count = actual_episodes;
@@ -111,6 +112,11 @@ impl AbfV2 {
         // for adc_info in adc_infos{
         //     println!("name/label of the ADC: {}", &strs[adc_info.adc_channel_name_index as usize]);
         //     println!("units of the ADC: {}", &strs[adc_info.adc_units_index as usize]);            
+        // }
+        // for dac_info in dacs_info{
+        //     println!("name/label of the DAC: {}", &strs[dac_info.get_channel_name_index() as usize]);
+        //     println!("units of the DAC: {}", &strs[dac_info.get_channel_units_index() as usize]);            
+        //     println!("path of custom stimulus waveform: {}", &strs[dac_info.get_file_path_index() as usize]);            
         // }
         Self {
             file_signature: AbfKind::AbfV2,
