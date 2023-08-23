@@ -36,14 +36,14 @@ mod tests {
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
     }
 
-    // #[test]
-    // fn test_abfv2_heavy(){
-    //     let start_time = Instant::now();
-    //     let abf = AbfBuilder::from_file("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf");
-    //     let elapsed_time = start_time.elapsed();
-    //     println!("{:?}", elapsed_time);
-    //     // assert!(elapsed_time.as_millis()<900);
-    // }
+    #[test]
+    fn test_abfv2_heavy(){
+        let start_time = Instant::now();
+        let abf = AbfBuilder::from_file("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf");
+        let elapsed_time = start_time.elapsed();
+        println!("{:?}", elapsed_time);
+        // assert!(elapsed_time.as_millis()<900);
+    }
 
     // #[test]
     // fn test_abfv1(){

@@ -38,5 +38,4 @@ impl<'a> SectionProducer<'a> {
         Section::new(self.mmap, 252, std::marker::PhantomData::<TagSectionType>)
     } 
 
-
 }

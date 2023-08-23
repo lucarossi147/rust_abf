@@ -11,13 +11,14 @@ impl Section<'_, StringsSectionType>{
     pub fn read_indexed_strings(&self)->Vec<String>{
         let from = self.block_number as usize;
         let to = from + self.byte_count as usize;
-        self.mmap[from..to]
+        let res:Vec<String> = self.mmap[from..to]
         .split(|c| c == &0b00)
         // .map(|str_i| if str_i.len()>1 { &str_i[1..]} else {&str_i[..]})
         .map(|str_i| String::from_utf8_lossy(str_i))
         .filter_map(|str_i| if !str_i.is_empty()  {Some(str_i)} else {None})
         .map(|str_i| str_i.trim().to_string())
-        .collect()
+        .collect();
+        res[3..].to_vec()
     }
 
     pub fn read_strings(&self) -> Vec<String> {

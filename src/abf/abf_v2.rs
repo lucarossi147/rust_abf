@@ -76,15 +76,12 @@ impl AbfV2 {
         let number_of_channels = adc_section.get_channel_count();
         let data = data_section.read(number_of_channels);
 
-        // let dataByteStart = data_section.[0]*BLOCKSIZE;
-        // let dataPointCount = _sectionMap.DataSection[2];
-        // let channelCount = _sectionMap.ADCSection[2];
         // let dataRate = (1e6 / _protocolSection.fADCSequenceInterval)
         let adc_infos = adc_section.get_adc_infos();
         let dacs_info = dac_section.get_dacs_info();
-        let data_rate = 1e6 / protocol_section.adc_sequence_interval();
-        let data_sec_per_point = 1.0 / data_rate;
+        let sampling_rate = 1e6 / protocol_section.adc_sequence_interval();
         let sweep_count = actual_episodes;
+        println!("{:?}",sweep_count);
 
         let scaling_factors = (0..number_of_channels)
         .map(|_| 1.0_f32)
