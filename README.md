@@ -18,29 +18,29 @@ This is a Rust project that provides a fast and memory-efficient way to read ABF
 
     ```toml
     [dependencies]
-    rust-abf-reader = "0.1"
+    rust-abf-reader = "0.1.1"
     ```
 
 3. In your Rust code:
 
     ```rust
-    use rust_abf;
+    use rust_abf::AbfBuilder;
 
     fn main() {
-        let file_path = "path/to/your/file.abf";
-        
-        if let Ok(reader) = AbfReader::new(file_path) {
-            // Read header information
-            let header = reader.header();
-
-            // Access channels and data
-            for channel in header.channel_info.iter() {
-                let channel_number = channel.channel_number;
-                let data = reader.read_channel_data(channel_number);
-                // Process data as needed
-            }
-        } else {
-            eprintln!("Error reading ABF file");
+        let abf = AbfBuilder::from_file("path/to/your/file.abf");
+        match abf {
+            Ok(abf) => {
+                let channels_count = abf.get_channels_count();
+                let sweeps_count = abf.get_sweeps_count();
+                println!("There are {:?} channels and {:?} sweeps", channels_count, sweeps_count);
+                (0..channels_count).for_each(|ch| {
+                    (0..sweeps_count).for_each(|s|{
+                        let data = abf.get_sweep_in_channel( s, ch).unwrap();
+                        println!("First 10 elements from ch {:?} and sweep {:?}: {:?}", ch, s, &data[0..10]);
+                    });
+                });
+            },
+            _ => println!("File not found"),
         }
     }
     ```
