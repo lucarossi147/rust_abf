@@ -14,7 +14,7 @@ impl Section<'_, StringsSectionType>{
         let res:Vec<String> = self.mmap[from..to]
         .split(|c| c == &0b00)
         // .map(|str_i| if str_i.len()>1 { &str_i[1..]} else {&str_i[..]})
-        .map(|str_i| String::from_utf8_lossy(str_i))
+        .map(String::from_utf8_lossy)
         .filter_map(|str_i| if !str_i.is_empty()  {Some(str_i)} else {None})
         .map(|str_i| str_i.trim().to_string())
         .collect();
