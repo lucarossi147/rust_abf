@@ -59,9 +59,11 @@ mod tests {
     #[ignore = "This test uses a very large file that is not versioned, and would break the ci"]
     fn test_abfv2_heavy(){
         let start_time = Instant::now();
-        let abf = AbfBuilder::from_file("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf");
+        let abf = AbfBuilder::from_file("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf").unwrap();
         let elapsed_time = start_time.elapsed();
         println!("{:?}", elapsed_time);
+        assert_eq!(abf.get_sweeps_count(), 1);
+        assert_eq!(abf.get_channels_count(), 2);
         // assert!(elapsed_time.as_millis()<900);
     }
 
