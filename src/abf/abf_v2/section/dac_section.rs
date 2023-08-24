@@ -25,7 +25,7 @@ impl DacSectionInfo {
 
 impl Section<'_, DacSectionType>{
     pub fn get_dacs_info(self) -> Vec<DacSectionInfo> {
-        println!("there are {:?} dacs", self.item_count);
+        // println!("there are {:?} dacs", self.item_count);
         (0..self.item_count)
         .map(|ch|self.block_number + ch * self.byte_count)
         .flat_map(usize::try_from)

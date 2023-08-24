@@ -68,9 +68,9 @@ impl Abf {
         .map(|(sf, ai)| (sf / ai.instrument_scale_factor, ai))
         .map(|(sf, ai)| (sf/ai.signal_gain, ai))
         .map(|(sf, ai)| (sf/ai.adc_programmable_gain, ai))
-        .map(|(sf, ai)| if ai.telegraph_enable != 0 {(sf/ai.telegraph_addit_gain, ai)} else {(sf, ai)})
-        .map(|(sf, ai)| (sf* protocol_section.adc_range(), ai))
-        .map(|(sf, ai)| (sf/ protocol_section.adc_resolution() as f32))
+        .map(|(sf, ai)| if ai.telegraph_enable != 0 {sf/ai.telegraph_addit_gain} else {sf})
+        .map(|sf| (sf* protocol_section.adc_range()))
+        .map(|sf| (sf/ protocol_section.adc_resolution() as f32))
         .collect();
 
         let offsets: Vec<f32> = (0..number_of_channels)
@@ -101,7 +101,10 @@ impl Abf {
             abf_kind,
             file_kind: if data_format == 0 {FileKind::I16} else {FileKind::F32},
             channels_count: number_of_channels as u32,
-            sweeps_count: sweep_count,
+            sweeps_count: match sweep_count {
+                0 => 1,
+                n => n,
+            },
             sampling_rate,
             channels: (0..number_of_channels)
             .map(|ch|{
