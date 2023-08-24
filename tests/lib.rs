@@ -37,6 +37,25 @@ mod tests {
     }
 
     #[test]
+    fn iterate_over_sweep_and_channel(){
+        let start_time = Instant::now();
+        let abf = AbfBuilder::from_file("tests/test_abf/18425108.abf").unwrap();
+        let elapsed_time = start_time.elapsed();
+        println!("{:?}", elapsed_time);
+        assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
+        let ch_num = abf.get_channels_count();
+        let sw_num = abf.get_sweeps_count();
+        assert_eq!(ch_num, 2);
+        assert_eq!(sw_num, 1);
+        (0..ch_num).for_each(|ch| {
+            (0..sw_num).for_each(|s|{
+                let data = abf.get_sweep_in_channel( s, ch).unwrap();
+                assert_eq!(data.len(), 250_000)
+            });
+        });
+    }
+
+    #[test]
     #[ignore = "This test uses a very large file that is not versioned, and would break the ci"]
     fn test_abfv2_heavy(){
         let start_time = Instant::now();

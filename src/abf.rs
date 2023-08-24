@@ -3,7 +3,8 @@ pub mod abf_v2;
 // use std::collections::HashMap;
 
 use std::collections::HashMap;
-
+use rayon::prelude::IntoParallelRefIterator;
+use rayon::iter::ParallelIterator;
 use super::AbfKind;
 
 // TODO the abf will be a collection of sweeps.
@@ -76,13 +77,18 @@ impl Abf {
     }
 
     pub fn get_sweep_in_channel(&self, sweep: u32, channel: u32)->Option<Vec<f32>> {
+        if sweep >= self.sweeps_count {
+            return None;
+        }
         let ch =  self.channels.get(&channel)?;
         let len = &ch.values.len();
-        let data = ch.values
-        .chunks(len/self.sweeps_count as usize)
-        .enumerate()
-        .filter_map(|(idx, chunck)| if idx == sweep as usize {Some(chunck)} else {None})
-        .flatten()
+        let usize_sweep = sweep as usize;
+        let data = if sweep == self.sweeps_count-1 {
+            &ch.values[len*usize_sweep..]
+        } else {
+            &ch.values[len*usize_sweep ..(len+1)*usize_sweep]
+        }
+        .par_iter()
         .map(|v| *v as f32);
         Some(match self.file_kind {
             // data in int, needs to be multiplied for the scaling factors
@@ -90,7 +96,6 @@ impl Abf {
             FileKind::F32 => data.collect(),
         })
     }
-
     pub fn get_file_signature(&self) -> AbfKind {
         self.abf_kind
     }

@@ -102,7 +102,7 @@ impl Abf {
             file_kind: if data_format == 0 {FileKind::I16} else {FileKind::F32},
             channels_count: number_of_channels as u32,
             sweeps_count: match sweep_count {
-                0 => 1,
+                0 | 1 => 1,
                 n => n,
             },
             sampling_rate,
