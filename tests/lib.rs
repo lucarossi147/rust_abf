@@ -11,9 +11,9 @@ mod tests {
         let elapsed_time = start_time.elapsed();
         // println!("{:?}", elapsed_time);
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
-        let ch_num = abf.get_channel_count();
+        let ch_num = abf.get_channels_count();
         for ch in 0..ch_num {
-            let data = abf.get_data(ch).unwrap();
+            let data = abf.get_sweep_in_channel(0, ch).unwrap();
             assert_eq!(&data.len(), &1800000);
             // println!("{:?} ... {:?}", &data[..10], &data[&data.len()-10..], );
         }
@@ -28,9 +28,9 @@ mod tests {
         let elapsed_time = start_time.elapsed();
         println!("{:?}", elapsed_time);
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
-        let ch_num = abf.get_channel_count();
+        let ch_num = abf.get_channels_count();
         for ch in 0..ch_num {
-            let data = abf.get_data(ch).unwrap();
+            let data = abf.get_sweep_in_channel(0, ch).unwrap();
             assert_eq!(&data.len(), &250000);
         }
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
