@@ -82,11 +82,16 @@ impl Abf {
         }
         let ch =  self.channels.get(&channel)?;
         let len = &ch.values.len();
-        let usize_sweep = sweep as usize;
-        let data = if sweep == self.sweeps_count-1 {
-            &ch.values[len*usize_sweep..]
-        } else {
-            &ch.values[len*usize_sweep ..(len+1)*usize_sweep]
+        let data = match sweep {
+            0 => &ch.values[0..*len],
+            n =>{
+                let usize_n = n as usize;
+                if n != self.sweeps_count - 1 {
+                    &ch.values[len * usize_n ..len*(usize_n + 1)]
+                } else {
+                    &ch.values[len*usize_n..]
+                }
+            } 
         }
         .par_iter()
         .map(|v| *v as f32);

@@ -14,7 +14,7 @@ mod tests {
         let ch_num = abf.get_channels_count();
         for ch in 0..ch_num {
             let data = abf.get_sweep_in_channel(0, ch).unwrap();
-            assert_eq!(&data.len(), &600000);
+            assert_eq!(&data.len(), &1_800_000);
             // println!("{:?} ... {:?}", &data[..10], &data[&data.len()-10..], );
         }
         // print!("{:?}, {:?}", elapsed_time, start_time.elapsed().as_millis());
