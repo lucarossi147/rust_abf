@@ -37,6 +37,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "This test uses a very large file that is not versioned, and would break the ci"]
     fn test_abfv2_heavy(){
         let start_time = Instant::now();
         let abf = AbfBuilder::from_file("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf");
