@@ -45,6 +45,17 @@ This is a Rust project that provides a fast and memory-efficient way to read ABF
     }
     ```
 
+If you prefer to work on channels, you can have direct access to them by using the following code:
+```
+    ...
+    let ch0 = abf.get_channel(0).unwrap();
+    println!("Channel 0 has the following unit of measurement {:?} and the following label {:?}", ch0.get_uom(), ch0.get_label());
+    for s in 0..abf.get_sweeps_count() {
+        let data = ch0.get_sweep(s).unwrap();
+        println!("Sweep {:?} has {:?} points", s, data.len());
+    }
+    ...
+``` 
 ## Contributing
 
 Contributions are welcome! If you encounter issues or have suggestions, please open an issue or submit a pull request.

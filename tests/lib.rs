@@ -31,9 +31,10 @@ mod tests {
         assert!(matches!(ch0.get_uom(), "mV"));
         assert!(matches!(abf.get_sweeps_count() , 3));
         for s in 0..abf.get_sweeps_count() {
-            assert!(matches!(ch0.get_sweep(s).and_then(|ch|{
-                Some(ch.len())
-            } ), Some(600_000)));
+            assert_eq!(
+                ch0.get_sweep(s).and_then(|ch| Some(ch.len())), 
+                Some(600_000)
+            );
         }
     }
 
