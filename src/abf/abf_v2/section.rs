@@ -6,17 +6,17 @@ pub mod adc_section;
 pub mod protocol_section;
 pub mod data_section;
 pub mod strings_sections;
-pub mod dac_section;
+// pub mod dac_section;
 
 pub struct ProtocolSectionType;
 pub struct AdcSectionType;
 pub struct DacSectionType;
-pub struct EpochSectionType;
-pub struct AdcPerDacSectionType;
-pub struct EpochPerDacSectionType;
+// pub struct EpochSectionType;
+// pub struct AdcPerDacSectionType;
+// pub struct EpochPerDacSectionType;
 pub struct StringsSectionType;
 pub struct DataSectionType;
-pub struct TagSectionType;
+// pub struct TagSectionType;
 
 pub struct Section<'a, SectionType>{
     mmap: &'a Mmap,
