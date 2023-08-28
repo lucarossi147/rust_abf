@@ -1,10 +1,10 @@
 mod abf_v1;
 pub mod abf_v2;
+mod channel;
 
 use std::collections::HashMap;
-use rayon::prelude::IntoParallelRefIterator;
-use rayon::iter::ParallelIterator;
 use super::AbfKind;
+use channel::Channel;
 
 // TODO the abf will be a collection of sweeps.
 // sweeps will be common to both abfs
@@ -14,49 +14,9 @@ use super::AbfKind;
 //     Adc,
 //     Dac,
 // }
-enum FileKind {
-     I16,
-     F32,  
-}
-pub struct Channel {
-    // channel_kind: ChannelKind,
-    values: Vec<i16>,
-    uom: String,
-    gain: f32,
-    offset: f32,
-    label: String,
-}
-
-impl Channel {
-    fn new(
-        // channel_kind: ChannelKind,
-        values: Vec<i16>,
-        uom: String,
-        gain: f32,
-        offset: f32,
-        label: String,
-    ) -> Self {
-        Self{
-            // channel_kind,
-            values,
-            uom,
-            gain,
-            offset,
-            label,
-        }
-    }
-    pub fn get_uom(&self) -> &str {
-        &self.uom
-    } 
-
-    pub fn get_label(&self) -> &str {
-        &self.label
-    } 
-}
 
 pub struct Abf {
     abf_kind: AbfKind,
-    file_kind: FileKind,
     channels_count: u32,
     sweeps_count: u32,
     sampling_rate: f32,
@@ -83,26 +43,7 @@ impl Abf {
         if sweep >= self.sweeps_count {
             return None;
         }
-        let ch =  self.channels.get(&channel)?;
-        let len = &ch.values.len();
-        let data = match sweep {
-            0 => &ch.values[0..*len],
-            n =>{
-                let usize_n = n as usize;
-                if n != self.sweeps_count - 1 {
-                    &ch.values[len * usize_n ..len*(usize_n + 1)]
-                } else {
-                    &ch.values[len*usize_n..]
-                }
-            } 
-        }
-        .par_iter()
-        .map(|v| *v as f32);
-        Some(match self.file_kind {
-            // data in int, needs to be multiplied for the scaling factors
-            FileKind::I16 => data.map(|v| v * ch.gain + ch.offset).collect(),
-            FileKind::F32 => data.collect(),
-        })
+        self.channels.get(&channel)?.get_sweep(sweep)
     }
     pub fn get_file_signature(&self) -> AbfKind {
         self.abf_kind

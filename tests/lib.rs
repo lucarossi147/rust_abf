@@ -13,13 +13,28 @@ mod tests {
         let ch_num = abf.get_channels_count();
         for ch in 0..ch_num {
             let data = abf.get_sweep_in_channel(0, ch).unwrap();
-            assert_eq!(&data.len(), &1_800_000);
-            let ch = abf.get_channel(ch).unwrap();
-            println!("Channel {:?} has as uom {:?}", ch.get_label(), ch.get_uom() );
-            // println!("{:?} ... {:?}", &data[..10], &data[&data.len()-10..], );
+            assert_eq!(&data.len(), &600_000);
+            assert_eq!(abf.get_channel(ch).and_then(|ch| Some(ch.get_uom())), Some("mV"));
+            assert_eq!(&data.len(), &600_000);
         }
-        // print!("{:?}, {:?}", elapsed_time, start_time.elapsed().as_millis());
         // assert!(elapsed_time.as_millis()<100);
+    }
+
+    #[test]
+    fn test_access_abf_by_channel(){
+        let start_time = Instant::now();
+        let abf = AbfBuilder::from_file("tests/test_abf/14o08011_ic_pair.abf").unwrap();
+        let _elapsed_time = start_time.elapsed();
+        let ch0 = abf.get_channel(0).unwrap();
+        // println!("{:?}", elapsed_time);
+        assert!(matches!(ch0.get_label(), "IN 0"));
+        assert!(matches!(ch0.get_uom(), "mV"));
+        assert!(matches!(abf.get_sweeps_count() , 3));
+        for s in 0..abf.get_sweeps_count() {
+            assert!(matches!(ch0.get_sweep(s).and_then(|ch|{
+                Some(ch.len())
+            } ), Some(600_000)));
+        }
     }
 
     #[test]

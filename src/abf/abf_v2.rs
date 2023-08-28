@@ -1,7 +1,8 @@
 mod section;
 
 use crate::AbfKind;
-use super::{Abf, FileKind, Channel};
+use super::{Abf, Channel};
+use super::channel::FileKind;
 use crate::conversion_util as cu;
 use memmap2::Mmap;
 use section::section_producer::SectionProducer; 
@@ -82,14 +83,15 @@ impl Abf {
         .map(|(sf, ai)| (sf - ai.signal_offset))
         .collect();
         let indexed_strings = strings_section.read_indexed_strings();
+        let sweeps_count = match sweep_count {
+            0 | 1 => 1,
+            n => n,
+        };
+        let file_kind = if data_format == 0 {FileKind::I16} else {FileKind::F32};
         Self {
             abf_kind,
-            file_kind: if data_format == 0 {FileKind::I16} else {FileKind::F32},
             channels_count: number_of_channels as u32,
-            sweeps_count: match sweep_count {
-                0 | 1 => 1,
-                n => n,
-            },
+            sweeps_count,
             sampling_rate,
             channels: (0..number_of_channels)
             .map(|ch|{
@@ -101,7 +103,9 @@ impl Abf {
                         indexed_strings.get(adc_infos[ch].adc_units_index).unwrap_or(&"nan".to_string()).clone(), 
                         gains[ch], 
                         offsets[ch],
-                        indexed_strings.get(adc_infos[ch].adc_channel_name_index).unwrap_or(&"nan".to_string()).clone()
+                        indexed_strings.get(adc_infos[ch].adc_channel_name_index).unwrap_or(&"nan".to_string()).clone(),
+                        sweeps_count,
+                        file_kind,
                     )
                 )
             })
