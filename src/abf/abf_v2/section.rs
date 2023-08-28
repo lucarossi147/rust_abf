@@ -41,8 +41,4 @@ impl<'a, T> Section<'a, T> {
             section_type,
         }
     }
-
-    pub fn print_info(self){
-        println!("section type: {:?}, block number: {:?}, byte count: {:?}, item count: {:?}", self.section_type, self.block_number, self.byte_count, self.item_count);
-    }
 }

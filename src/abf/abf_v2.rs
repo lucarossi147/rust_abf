@@ -33,7 +33,7 @@ impl Abf {
         let sec_prod = SectionProducer::new(&memmap);
         let protocol_section = sec_prod.get_protocol_section();
         let adc_section = sec_prod.get_adc_section();
-        let dac_section = sec_prod.get_dac_section();
+        let _dac_section = sec_prod.get_dac_section();
         // let epoch_section = sec_prod.get_epoch_section();
         // let adc_per_dac_section = sec_prod.get_adc_per_dac_section();
         // let epoch_per_dac_section = sec_prod.get_epoch_per_dac_section();

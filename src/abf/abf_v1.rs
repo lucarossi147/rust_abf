@@ -1,10 +1,3 @@
-use std::collections::HashMap;
-
-struct AbfV1{
-    data: HashMap<usize, Vec<i16>>
-}
-
-
 // impl Abf for AbfV1{
 //     fn open<T,E>(filepath: &str) -> Result<T, E>{
 

@@ -7,7 +7,7 @@ mod tests {
     fn test_abfv2_1(){
         let start_time = Instant::now();
         let abf = AbfBuilder::from_file("tests/test_abf/14o08011_ic_pair.abf").unwrap();
-        let elapsed_time = start_time.elapsed();
+        let _elapsed_time = start_time.elapsed();
         // println!("{:?}", elapsed_time);
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
         let ch_num = abf.get_channels_count();
