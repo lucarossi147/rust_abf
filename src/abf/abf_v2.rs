@@ -2,7 +2,7 @@ use crate::AbfKind;
 use super::{Abf, FileKind, Channel};
 use crate::conversion_util as cu;
 mod section;
-use memmap::Mmap;
+use memmap2::Mmap;
 use section::section_producer::SectionProducer; 
 
 impl Abf {

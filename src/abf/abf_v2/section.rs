@@ -1,5 +1,5 @@
 use crate::conversion_util as cu;
-use memmap::Mmap;
+use memmap2::Mmap;
 
 pub mod section_producer;
 pub mod adc_section;

@@ -1,5 +1,5 @@
 use std::str;
-use memmap::Mmap;
+use memmap2::Mmap;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 pub fn from_bytes_array_to_string(mmap: &Mmap, from: usize, len: usize) -> Result<&str, str::Utf8Error>{

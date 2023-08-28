@@ -1,7 +1,7 @@
 use std::str;
 use std::fs::File;
 use std::io::{Error, ErrorKind};
-use memmap::Mmap;
+use memmap2::Mmap;
 
 pub mod abf;
 mod conversion_util;

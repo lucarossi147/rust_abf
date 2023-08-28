@@ -1,4 +1,4 @@
-use memmap::Mmap;
+use memmap2::Mmap;
 use super::*;
 
 pub struct SectionProducer<'a> {
