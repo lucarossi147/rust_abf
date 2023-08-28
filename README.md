@@ -46,7 +46,7 @@ This is a Rust project that provides a fast and memory-efficient way to read ABF
     ```
 
 If you prefer to work on channels, you can have direct access to them by using the following code:
-```
+```rust
     ...
     let ch0 = abf.get_channel(0).unwrap();
     println!("Channel 0 has the following unit of measurement {:?} and the following label {:?}", ch0.get_uom(), ch0.get_label());
