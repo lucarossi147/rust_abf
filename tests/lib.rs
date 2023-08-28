@@ -2,8 +2,7 @@
 mod tests {
     use std::time::Instant;
     use rust_abf::{AbfBuilder, AbfKind};
-    use rust_abf::abf::Abf;
-    
+
     #[test]
     fn test_abfv2_1(){
         let start_time = Instant::now();
@@ -15,6 +14,8 @@ mod tests {
         for ch in 0..ch_num {
             let data = abf.get_sweep_in_channel(0, ch).unwrap();
             assert_eq!(&data.len(), &1_800_000);
+            let ch = abf.get_channel(ch).unwrap();
+            println!("Channel {:?} has as uom {:?}", ch.get_label(), ch.get_uom() );
             // println!("{:?} ... {:?}", &data[..10], &data[&data.len()-10..], );
         }
         // print!("{:?}, {:?}", elapsed_time, start_time.elapsed().as_millis());
@@ -32,6 +33,8 @@ mod tests {
         for ch in 0..ch_num {
             let data = abf.get_sweep_in_channel(0, ch).unwrap();
             assert_eq!(&data.len(), &250000);
+            let ch = abf.get_channel(ch).unwrap();
+            println!("Channel {:?} has as uom {:?}", ch.get_label(), ch.get_uom() );
         }
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
     }
@@ -64,6 +67,10 @@ mod tests {
         println!("{:?}", elapsed_time);
         assert_eq!(abf.get_sweeps_count(), 1);
         assert_eq!(abf.get_channels_count(), 2);
+        assert_eq!(abf.get_channel(0).unwrap().get_label(), "I0");
+        assert_eq!(abf.get_channel(0).unwrap().get_uom(), "nA");
+        assert_eq!(abf.get_channel(1).unwrap().get_label(), "V0");
+        assert_eq!(abf.get_channel(1).unwrap().get_uom(), "mV");
         // assert!(elapsed_time.as_millis()<900);
     }
 

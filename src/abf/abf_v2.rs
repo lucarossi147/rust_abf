@@ -109,7 +109,14 @@ impl Abf {
             channels: (0..number_of_channels)
             .map(|ch|{
                 let data = data.get(&ch).unwrap();
-                (ch as u32, Channel::new(data.to_owned(), "uom".to_string(), gains[ch], offsets[ch], "label".to_string()))
+                (
+                    ch as u32, 
+                    Channel::new(data.to_owned(), 
+                    strs[adc_infos[ch].adc_units_index as usize].clone() , 
+                    gains[ch],
+                     offsets[ch],
+                      strs[adc_infos[ch].adc_channel_name_index as usize].clone())
+                )
             })
             .collect(),
         }

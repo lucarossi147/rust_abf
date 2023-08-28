@@ -19,7 +19,7 @@ enum FileKind {
      I16,
      F32,  
 }
-struct Channel {
+pub struct Channel {
     // channel_kind: ChannelKind,
     values: Vec<i16>,
     uom: String,
@@ -46,9 +46,13 @@ impl Channel {
             label,
         }
     }
-    // fn get_channel_kind(&self) -> ChannelKind {
-    //     self.channel_kind
-    // }
+    pub fn get_uom(&self) -> &str {
+        &self.uom
+    } 
+
+    pub fn get_label(&self) -> &str {
+        &self.label
+    } 
 }
 
 pub struct Abf {
@@ -103,6 +107,9 @@ impl Abf {
     }
     pub fn get_file_signature(&self) -> AbfKind {
         self.abf_kind
+    }
+    pub fn get_channel(&self, index: u32)-> Option<&Channel> {
+        self.channels.get(&index)
     }
 }
 
