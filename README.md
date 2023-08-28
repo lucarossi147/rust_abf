@@ -18,7 +18,7 @@ This is a Rust project that provides a fast and memory-efficient way to read ABF
 
     ```toml
     [dependencies]
-    rust-abf-reader = "0.1.1"
+    rust-abf-reader = "0.1.3"
     ```
 
 3. In your Rust code:
