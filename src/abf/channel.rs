@@ -67,4 +67,8 @@ impl Channel {
             FileKind::F32 => data.collect(),
         })
     }
+
+    pub fn get_sweeps(&self) -> impl Iterator<Item = Option<Vec<f32>>> +'_ {
+        (0..self.sweeps_count).map(|s| self.get_sweep(s))
+    }
 }

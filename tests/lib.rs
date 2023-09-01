@@ -73,6 +73,22 @@ mod tests {
             });
         });
     }
+    
+    #[test]
+    fn test_iterator_over_channels(){
+        let abf = AbfBuilder::from_file("tests/test_abf/18425108.abf").unwrap();
+        abf.get_channels()
+        .for_each(|c| assert_eq!(c.get_sweep(0).unwrap().len(), 250_000));
+    }
+
+    #[test]
+    fn test_iterator_over_channels_and_sweeps(){
+        let abf = AbfBuilder::from_file("tests/test_abf/18425108.abf").unwrap();
+        abf.get_channels()
+        .map(|c| c.get_sweeps())
+        .flatten()
+        .for_each(|s| assert_eq!(s.unwrap().len(), 250_000) );
+    }
 
     #[test]
     #[ignore = "This test uses a very large file that is not versioned, and would break the ci"]

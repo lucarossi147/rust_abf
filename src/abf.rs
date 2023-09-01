@@ -51,6 +51,9 @@ impl Abf {
     pub fn get_channel(&self, index: u32)-> Option<&Channel> {
         self.channels.get(&index)
     }
+    pub fn get_channels(&self)-> impl Iterator<Item = &Channel>{
+        self.channels.values().into_iter()
+    }
 }
 
 // pub trait Abf {
