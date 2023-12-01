@@ -56,6 +56,20 @@ If you prefer to work on channels, you can have direct access to them by using t
     }
     ...
 ``` 
+
+You might also prefer a more functional approach like the following:
+```rust
+    ...
+    abf.get_channels()
+        .for_each(|channel| {
+            channel.get_sweeps()
+            // take only the Some values
+            .flatten()
+            .for_each(|sweep| println!("First 10 elements {:?}, the unit of measurement is {:?}", &sweep[0..10], channel.get_uom()))
+        });
+    ...
+
+```
 ## Contributing
 
 Contributions are welcome! If you encounter issues or have suggestions, please open an issue or submit a pull request.
