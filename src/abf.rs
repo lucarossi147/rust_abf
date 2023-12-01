@@ -35,24 +35,31 @@ impl Abf {
         self.channels_count
     }
 
-    pub fn get_sweeps_count(&self )-> u32 {
+    pub fn get_sweeps_count(&self ) -> u32 {
         self.sweeps_count
     }
 
-    pub fn get_sweep_in_channel(&self, sweep: u32, channel: u32)->Option<Vec<f32>> {
+    pub fn get_sweep_in_channel(&self, sweep: u32, channel: u32) -> Option<Vec<f32>> {
         if sweep >= self.sweeps_count {
             return None;
         }
         self.channels.get(&channel)?.get_sweep(sweep)
     }
+
     pub fn get_file_signature(&self) -> AbfKind {
         self.abf_kind
     }
-    pub fn get_channel(&self, index: u32)-> Option<&Channel> {
+
+    pub fn get_channel(&self, index: u32) -> Option<&Channel> {
         self.channels.get(&index)
     }
-    pub fn get_channels(&self)-> impl Iterator<Item = &Channel>{
+
+    pub fn get_channels(&self) -> impl Iterator<Item = &Channel>{
         self.channels.values().into_iter()
+    }
+    
+    pub fn get_sampling_rate(&self) -> f32 {
+        self.sampling_rate
     }
 }
 

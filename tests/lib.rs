@@ -106,6 +106,12 @@ mod tests {
         // assert!(elapsed_time.as_millis()<900);
     }
 
+    #[test]
+    fn test_sampling_rate() {
+        let abf = AbfBuilder::from_file("tests/test_abf/18425108.abf").unwrap();
+        let sr = abf.get_sampling_rate();
+        assert_eq!(sr, 25000.0);
+    }
     // #[test]
     // fn test_abfv1(){
     //     let start_time = Instant::now();
