@@ -1,12 +1,12 @@
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
+    use std::{time::Instant, path::Path};
     use rust_abf::{AbfBuilder, AbfKind};
 
     #[test]
     fn test_abfv2_1(){
         let start_time = Instant::now();
-        let abf = AbfBuilder::from_file("tests/test_abf/14o08011_ic_pair.abf").unwrap();
+        let abf = AbfBuilder::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
         let _elapsed_time = start_time.elapsed();
         // println!("{:?}", elapsed_time);
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
@@ -23,7 +23,7 @@ mod tests {
     #[test]
     fn test_access_abf_by_channel(){
         let start_time = Instant::now();
-        let abf = AbfBuilder::from_file("tests/test_abf/14o08011_ic_pair.abf").unwrap();
+        let abf = AbfBuilder::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
         let _elapsed_time = start_time.elapsed();
         let ch0 = abf.get_channel(0).unwrap();
         // println!("{:?}", elapsed_time);
@@ -41,7 +41,7 @@ mod tests {
     #[test]
     fn test_abfv2_2(){
         let start_time = Instant::now();
-        let abf = AbfBuilder::from_file("tests/test_abf/18425108.abf").unwrap();
+        let abf = AbfBuilder::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
         let elapsed_time = start_time.elapsed();
         println!("{:?}", elapsed_time);
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn iterate_over_sweep_and_channel(){
         let start_time = Instant::now();
-        let abf = AbfBuilder::from_file("tests/test_abf/18425108.abf").unwrap();
+        let abf = AbfBuilder::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
         let elapsed_time = start_time.elapsed();
         println!("{:?}", elapsed_time);
         assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
@@ -76,14 +76,14 @@ mod tests {
     
     #[test]
     fn test_iterator_over_channels(){
-        let abf = AbfBuilder::from_file("tests/test_abf/18425108.abf").unwrap();
+        let abf = AbfBuilder::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
         abf.get_channels()
         .for_each(|c| assert_eq!(c.get_sweep(0).unwrap().len(), 250_000));
     }
 
     #[test]
     fn test_iterator_over_channels_and_sweeps(){
-        let abf = AbfBuilder::from_file("tests/test_abf/18425108.abf").unwrap();
+        let abf = AbfBuilder::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
         abf.get_channels()
         .map(|c| c.get_sweeps())
         .flatten()
@@ -91,10 +91,17 @@ mod tests {
     }
 
     #[test]
+    fn test_get_path(){
+        let path = Path::new("tests/test_abf/18425108.abf");
+        let abf = AbfBuilder::from_file(&path).unwrap();
+        assert_eq!(abf.get_path(), path);
+    }
+
+    #[test]
     #[ignore = "This test uses a very large file that is not versioned, and would break the ci"]
     fn test_abfv2_heavy(){
         let start_time = Instant::now();
-        let abf = AbfBuilder::from_file("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf").unwrap();
+        let abf = AbfBuilder::from_file(Path::new("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf")).unwrap();
         let elapsed_time = start_time.elapsed();
         println!("{:?}", elapsed_time);
         assert_eq!(abf.get_sweeps_count(), 1);
@@ -108,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_sampling_rate() {
-        let abf = AbfBuilder::from_file("tests/test_abf/18425108.abf").unwrap();
+        let abf = AbfBuilder::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
         let sr = abf.get_sampling_rate();
         assert_eq!(sr, 25000.0);
     }

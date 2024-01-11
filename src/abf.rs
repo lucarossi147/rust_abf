@@ -2,7 +2,7 @@ mod abf_v1;
 pub mod abf_v2;
 mod channel;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::{Path, PathBuf}};
 use super::AbfKind;
 use channel::Channel;
 
@@ -21,6 +21,7 @@ pub struct Abf {
     sweeps_count: u32,
     sampling_rate: f32,
     channels: HashMap<u32, Channel>,
+    path: PathBuf,
 }
 
 impl Abf {
@@ -60,6 +61,10 @@ impl Abf {
     
     pub fn get_sampling_rate(&self) -> f32 {
         self.sampling_rate
+    }
+
+    pub fn get_path(&self) -> &Path {
+        &self.path
     }
 }
 

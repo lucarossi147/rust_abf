@@ -1,4 +1,4 @@
-use std::str;
+use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::{Error, ErrorKind};
 use memmap2::Mmap;
@@ -19,13 +19,14 @@ pub enum AbfKind {
 pub struct AbfBuilder;
 
 impl AbfBuilder {
-    pub fn from_file(filepath: &str)-> Result<Abf, Error> {
-        let memmap =  unsafe { Mmap::map(&File::open(filepath)?)? };
+    pub fn from_file(filepath: &Path)-> Result<Abf, Error> {
+        let path = PathBuf::from(filepath);
+        let memmap =  unsafe { Mmap::map(&File::open(&path)?)? };
         let file_signature_str = cu::from_bytes_array_to_string(&memmap, 0, 4);
         match file_signature_str {
             Ok(v) => match v {
                 "ABF " => todo!(),
-                "ABF2" => Ok(Abf::from_abf_v2(memmap,  AbfKind::AbfV2)),
+                "ABF2" => Ok(Abf::from_abf_v2(memmap, path)),
                 _ => Err(Error::new(ErrorKind::InvalidData, "Incorrect file type"))
             },
             _ => Err(Error::new(ErrorKind::InvalidData, "Incorrect file type"))

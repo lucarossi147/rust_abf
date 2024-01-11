@@ -1,5 +1,5 @@
 mod section;
-
+use std::path::PathBuf;
 use crate::AbfKind;
 use super::{Abf, Channel};
 use super::channel::FileKind;
@@ -8,7 +8,8 @@ use memmap2::Mmap;
 use section::section_producer::SectionProducer; 
 
 impl Abf {
-    pub fn from_abf_v2(memmap:Mmap, abf_kind: AbfKind) -> Self {
+    pub fn from_abf_v2(memmap: Mmap, path: PathBuf) -> Self {
+        let abf_kind = AbfKind::AbfV2;
         // let file_version_number = (4..8).map(|i| memmap[i] as i8).collect();
         // let file_info_size = cu::from_byte_array_to_u32(&memmap, 8).unwrap();
         let actual_episodes = cu::from_byte_array_to_u32(&memmap, 12).unwrap();
@@ -110,6 +111,7 @@ impl Abf {
                 )
             })
             .collect(),
+            path,
         }
     }
 }
