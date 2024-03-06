@@ -26,8 +26,6 @@ pub struct Section<'a, SectionType>{
     section_type: std::marker::PhantomData<SectionType>,
 }
 
-
-
 impl<'a, T> Section<'a, T> {
     fn new(mmap: &'a Mmap, from: usize, section_type:std::marker::PhantomData<T>) -> Section<T> {
         let block_number = 512 * cu::from_byte_array_to_u32(mmap, from).unwrap();
