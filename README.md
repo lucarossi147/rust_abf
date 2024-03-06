@@ -14,20 +14,15 @@ This is a Rust project that provides a fast and memory-efficient way to read ABF
 ## Usage
 
 1. Install Rust and Cargo if you haven't already.
-2. Add this library to your `Cargo.toml`:
-
-    ```toml
-    [dependencies]
-    rust_abf = "0.4.0"
-    ```
-
+2. Add this library to your `Cargo.toml` or using `cargo add rust_abf`
 3. In your Rust code:
 
     ```rust
+    use std::path::Path;
     use rust_abf::AbfBuilder;
 
     fn main() {
-        let abf = AbfBuilder::from_file("path/to/your/file.abf");
+        let abf = Abf::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
         match abf {
             Ok(abf) => {
                 let channels_count = abf.get_channels_count();
