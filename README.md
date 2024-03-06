@@ -19,7 +19,7 @@ This is a Rust project that provides a fast and memory-efficient way to read ABF
 
     ```rust
     use std::path::Path;
-    use rust_abf::AbfBuilder;
+    use rust_abf::Abf;
 
     fn main() {
         let abf = Abf::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
