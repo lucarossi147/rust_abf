@@ -118,6 +118,15 @@ impl Abf {
     pub fn get_path(&self) -> &Path {
         &self.path
     }
+
+    pub fn get_time_duration(&self) -> Option<f32> {
+        let data_sec_per_point = 1.0 / self.sampling_rate;
+        if let Some(ch)  = self.get_channel(0) {
+            Some(ch.get_sweep_len() as f32 * data_sec_per_point)
+        } else {
+            None
+        }
+    }
 }
 
 // pub trait Abf {

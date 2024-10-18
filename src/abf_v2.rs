@@ -88,7 +88,8 @@ impl Abf {
             0 | 1 => 1,
             n => n,
         };
-        let file_kind = if data_format == 0 {FileKind::I16} else {FileKind::F32};
+        // let file_kind = if data_format == 0 {FileKind::I16} else {FileKind::F32};
+        let file_kind = FileKind::I16;
         Self {
             abf_kind,
             channels_count: number_of_channels as u32,

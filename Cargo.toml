@@ -1,6 +1,6 @@
 [package]
 name = "rust_abf"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 license = "MIT"
 authors = ["Luca Rossi <lucarossi147@gmail.com>"]
@@ -9,6 +9,6 @@ description = "Rust crate for reading data from Axon Binary Format (ABF) files."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-memmap2 = "0.9.4"
+memmap2 = "0.9.5"
 byteorder = "1.5.0"
-rayon = "1.9.0"
+rayon = "1.10.0"
