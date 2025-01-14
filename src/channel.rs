@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 #[derive(Clone, Copy)]
@@ -5,9 +6,11 @@ pub enum FileKind {
      I16,
     //  F32,  
 }
+
+#[derive(Clone)]
 pub struct Channel {
     // channel_kind: ChannelKind,
-    values: Vec<i16>,
+    values: Arc<[i16]>,
     uom: String,
     gain: f32,
     offset: f32,
@@ -19,7 +22,7 @@ pub struct Channel {
 impl Channel {
     pub fn new(
         // channel_kind: ChannelKind,
-        values: Vec<i16>,
+        values: Arc<[i16]>,
         uom: String,
         gain: f32,
         offset: f32,

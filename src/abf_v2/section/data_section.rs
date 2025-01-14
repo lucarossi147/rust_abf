@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 use rayon::prelude::*;
 use super::{Section, DataSectionType};
 use crate::conversion_util as cu;
 
 impl Section<'_, DataSectionType>{
-    pub fn read(&self, number_of_channels: usize) -> HashMap<usize, Vec<i16>> {
+    pub fn read(&self, number_of_channels: usize) -> HashMap<usize, Arc<[i16]>> {
         let from = usize::try_from(self.block_number).unwrap();
         let to = usize::try_from(self.block_number+(self.item_count*self.byte_count)).unwrap();
         let byte_count = usize::try_from(self.byte_count).unwrap();
@@ -12,7 +12,7 @@ impl Section<'_, DataSectionType>{
         .par_chunks_exact(byte_count)
         .map(cu::byte_array_to_i16);
         match number_of_channels {
-            1 => HashMap::from([(0, partial_res.collect::<Vec<i16>>())]),
+            1 => HashMap::from([(0, partial_res.collect::<Arc<[i16]>>())]),
             n => {
                 let partial_res_with_idxs = partial_res.enumerate().map(|(i, e)| (i%n, e));
                 // TODO, the last thing that comes to my mind to speedup even more the program is making the partial_res_with_idxs mutable and remove at every iteration 
