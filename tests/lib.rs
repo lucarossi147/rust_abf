@@ -153,6 +153,22 @@ mod tests {
     }
 
     #[test]
+    fn test_get_channels_order_is_stable_across_opens() {
+        for _ in 0..20 {
+            let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
+            let ch_num = abf.get_channels_count();
+            let expected: Vec<String> = (0..ch_num)
+                .map(|i| abf.get_channel(i).unwrap().get_label().to_string())
+                .collect();
+            let actual: Vec<String> = abf
+                .get_channels()
+                .map(|c| c.get_label().to_string())
+                .collect();
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
     fn test_from_file_wrong_signature_is_err() {
         let result = Abf::from_file(Path::new("tests/test_abf/wrong_signature.abf"));
         assert!(result.is_err());
