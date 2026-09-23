@@ -76,12 +76,12 @@ impl Abf {
     }
 
     pub fn get_time_axis(&self) -> Vec<f32> {
-        let data_sec_per_point = 1.0 / self.sampling_rate;
-        let data_len = self.get_sweep_in_channel(0, 0).unwrap().len();
-        let number_of_points = data_len / self.sweeps_count as usize;
-        (0..number_of_points)
-            .map(|n| n as f32)
-            .map(|n| n * data_sec_per_point)
+        let Some(sweep_len) = self.channels.first().map(|ch| ch.get_sweep_len()) else {
+            return Vec::new();
+        };
+        let data_sec_per_point = 1.0_f64 / self.sampling_rate as f64;
+        (0..sweep_len)
+            .map(|n| (n as f64 * data_sec_per_point) as f32)
             .collect()
     }
 
@@ -132,3 +132,40 @@ impl Abf {
 //     fn get_data(&self, channel: usize) -> Option<Vec<f32>>;
 //     fn get_file_signature(&self) -> AbfKind;
 // }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn abf_with_channels(channels: Vec<Channel>) -> Abf {
+        Abf {
+            abf_kind: AbfKind::AbfV2,
+            channels_count: channels.len() as u32,
+            sweeps_count: 1,
+            sampling_rate: 10_000.0,
+            channels,
+            path: PathBuf::new(),
+        }
+    }
+
+    #[test]
+    fn get_time_axis_is_empty_when_there_are_no_channels() {
+        let abf = abf_with_channels(Vec::new());
+        assert!(abf.get_time_axis().is_empty());
+    }
+
+    #[test]
+    fn get_time_axis_uses_sweep_len_from_first_available_channel() {
+        let channel = Channel::new(
+            std::sync::Arc::from(vec![1_i16, 2, 3]),
+            "mV".to_string(),
+            1.0,
+            0.0,
+            "IN 0".to_string(),
+            1,
+            channel::FileKind::I16,
+        );
+        let abf = abf_with_channels(vec![channel]);
+        assert_eq!(abf.get_time_axis().len(), 3);
+    }
+}

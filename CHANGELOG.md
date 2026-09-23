@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Fixed `Abf::get_time_axis()` returning a truncated axis (divided sweep length by `sweeps_count` a second time) for multi-sweep files, and removed a panic when channel 0 is missing. Now computed directly from a channel's sweep length in `f64` to avoid drift on long recordings, and returns an empty `Vec` if there are no channels.
 - Fixed `Abf::get_channels()`/`get_channel()` returning channels in non-deterministic order: `channels` is now a `Vec<Channel>` indexed by ADC section order instead of a `HashMap<u32, Channel>`; `data_section::read` now returns a `Vec<Arc<[i16]>>` indexed by channel instead of a `HashMap`.
 - Added `criterion` benchmarks (`benches/read.rs`) covering `open`, `read_all_sweeps_f32`, and `read_all_sweeps_raw` for each ABF2 test fixture. Run with `cargo bench`.
 - Added `tests/memory.rs`, a dedicated test binary that measures peak allocator bytes for `Abf::from_file` and for reading one sweep, per fixture, via a custom counting `#[global_allocator]` (`tests/common/alloc_counter.rs`). Run with `cargo test --test memory -- --nocapture`.
