@@ -77,12 +77,16 @@ impl Abf {
     }
 
     pub fn get_time_axis(&self) -> Vec<f32> {
-        let data_sec_per_point = 1.0 / self.sampling_rate;
-        let data_len = self.get_sweep_in_channel(0, 0).unwrap().len();
-        let number_of_points = data_len / self.sweeps_count as usize;
-        (0..number_of_points)
-            .map(|n| n as f32)
-            .map(|n| n * data_sec_per_point)
+        let Some(sweep_len) = self
+            .get_channel(0)
+            .or_else(|| self.channels.values().next())
+            .map(|ch| ch.get_sweep_len())
+        else {
+            return Vec::new();
+        };
+        let data_sec_per_point = 1.0_f64 / self.sampling_rate as f64;
+        (0..sweep_len)
+            .map(|n| (n as f64 * data_sec_per_point) as f32)
             .collect()
     }
 
