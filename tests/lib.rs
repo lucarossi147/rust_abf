@@ -189,6 +189,32 @@ mod tests {
     }
 
     #[test]
+    fn test_raw_sweep_at_sweeps_count_boundary_is_none() {
+        let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
+        let ch0 = abf.get_channel(0).unwrap();
+        let sweeps_count = abf.get_sweeps_count();
+        assert_eq!(ch0.get_raw_sweep(sweeps_count), None);
+        assert_eq!(ch0.get_sweep(sweeps_count), None);
+    }
+
+    #[test]
+    fn test_sweep_at_u32_max_is_none() {
+        let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
+        let ch0 = abf.get_channel(0).unwrap();
+        assert_eq!(ch0.get_raw_sweep(u32::MAX), None);
+        assert_eq!(ch0.get_sweep(u32::MAX), None);
+    }
+
+    #[test]
+    fn test_last_valid_sweep_is_some_with_expected_len() {
+        let abf = Abf::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
+        let ch0 = abf.get_channel(0).unwrap();
+        let last = abf.get_sweeps_count() - 1;
+        let sweep = ch0.get_raw_sweep(last).unwrap();
+        assert_eq!(sweep.len(), ch0.get_sweep_len());
+    }
+
+    #[test]
     fn test_get_channels_order_is_stable_across_opens() {
         for _ in 0..20 {
             let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
