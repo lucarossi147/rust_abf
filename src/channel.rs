@@ -58,26 +58,13 @@ impl Channel {
     }
 
     pub fn get_raw_sweep(&self, sweep: u32) -> Option<Vec<i16>> {
-        let len = self.get_sweep_len();
-        if sweep > self.sweeps_count {
+        if sweep >= self.sweeps_count {
             return None;
         }
-        Some(
-            match sweep {
-                0 => &self.values[0..len],
-                n => {
-                    let usize_n = n as usize;
-                    if n == self.sweeps_count - 1 {
-                        &self.values[len * usize_n..]
-                    } else {
-                        &self.values[len * usize_n..len * (usize_n + 1)]
-                    }
-                }
-            }
-            .par_iter()
-            .map(|v| *v)
-            .collect(),
-        )
+        let len = self.get_sweep_len();
+        let start = len * sweep as usize;
+        let end = start + len;
+        Some(self.values[start..end].par_iter().map(|v| *v).collect())
     }
 
     pub fn get_sweep(&self, sweep: u32) -> Option<Vec<f32>> {
