@@ -171,7 +171,6 @@ fn golden_abf1_05210017() {
 }
 
 #[test]
-#[ignore = "fixed by #7 ([2] get_time_axis() is wrong for multi-sweep files)"]
 fn golden_time_axis_matches_pyabf_for_multi_sweep_file() {
     let abf = Abf::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
     let golden = load_golden("14o08011_ic_pair");
