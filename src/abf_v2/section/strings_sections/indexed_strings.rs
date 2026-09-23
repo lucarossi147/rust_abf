@@ -1,4 +1,4 @@
-pub struct  IndexedStrings {
+pub struct IndexedStrings {
     strings: Vec<String>,
 }
 

@@ -18,7 +18,7 @@
 // !
 // ! // Access data from the ABF file
 // ! abf.get_channels()
-// ! .map(|c| c.get_sweeps()) 
+// ! .map(|c| c.get_sweeps())
 // ! .flatten()
 // ! .for_each(|s| assert_eq!(s.unwrap().len(), 250_000));
 // ! let channel_data = abf.get_sweep_in_channel(0, 0);
@@ -27,14 +27,14 @@
 // ! }
 // ! ```
 
+use channel::Channel;
 use memmap2::Mmap;
 use std::{
-    collections::HashMap, 
-    path::{Path, PathBuf},
+    collections::HashMap,
     fs::File,
-    io::{Error, ErrorKind}
+    io::{Error, ErrorKind},
+    path::{Path, PathBuf},
 };
-use channel::Channel;
 
 mod conversion_util;
 use conversion_util as cu;
@@ -44,7 +44,7 @@ mod channel;
 
 // use abf::abf_v2::AbfV2;
 // TODO this will become an Abf Header
-// TODO the Abf Header will be an enum, of either abf_v1 or abf_v2 
+// TODO the Abf Header will be an enum, of either abf_v1 or abf_v2
 #[derive(Debug, Clone, Copy)]
 pub enum AbfKind {
     AbfV1,
@@ -62,18 +62,17 @@ pub struct Abf {
 }
 
 impl Abf {
-
-    pub fn from_file(filepath: &Path)-> Result<Abf, Error> {
+    pub fn from_file(filepath: &Path) -> Result<Abf, Error> {
         let path = PathBuf::from(filepath);
-        let memmap =  unsafe { Mmap::map(&File::open(&path)?)? };
+        let memmap = unsafe { Mmap::map(&File::open(&path)?)? };
         let file_signature_str = cu::from_bytes_array_to_string(&memmap, 0, 4);
         match file_signature_str {
             Ok(v) => match v {
                 "ABF " => todo!(),
                 "ABF2" => Ok(Abf::from_abf_v2(memmap, path)),
-                _ => Err(Error::new(ErrorKind::InvalidData, "Incorrect file type"))
+                _ => Err(Error::new(ErrorKind::InvalidData, "Incorrect file type")),
             },
-            _ => Err(Error::new(ErrorKind::InvalidData, "Incorrect file type"))
+            _ => Err(Error::new(ErrorKind::InvalidData, "Incorrect file type")),
         }
     }
 
@@ -81,14 +80,17 @@ impl Abf {
         let data_sec_per_point = 1.0 / self.sampling_rate;
         let data_len = self.get_sweep_in_channel(0, 0).unwrap().len();
         let number_of_points = data_len / self.sweeps_count as usize;
-        (0..number_of_points).map(|n| n as f32).map(|n| n * data_sec_per_point).collect()
+        (0..number_of_points)
+            .map(|n| n as f32)
+            .map(|n| n * data_sec_per_point)
+            .collect()
     }
 
     pub fn get_channels_count(&self) -> u32 {
         self.channels_count
     }
 
-    pub fn get_sweeps_count(&self ) -> u32 {
+    pub fn get_sweeps_count(&self) -> u32 {
         self.sweeps_count
     }
 
@@ -107,10 +109,10 @@ impl Abf {
         self.channels.get(&index)
     }
 
-    pub fn get_channels(&self) -> impl Iterator<Item = &Channel>{
-        self.channels.values().into_iter()
+    pub fn get_channels(&self) -> impl Iterator<Item = &Channel> {
+        self.channels.values()
     }
-    
+
     pub fn get_sampling_rate(&self) -> f32 {
         self.sampling_rate
     }
@@ -121,11 +123,8 @@ impl Abf {
 
     pub fn get_time_duration(&self) -> Option<f32> {
         let data_sec_per_point = 1.0 / self.sampling_rate;
-        if let Some(ch)  = self.get_channel(0) {
-            Some(ch.get_sweep_len() as f32 * data_sec_per_point)
-        } else {
-            None
-        }
+        self.get_channel(0)
+            .map(|ch| ch.get_sweep_len() as f32 * data_sec_per_point)
     }
 }
 
