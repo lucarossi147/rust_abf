@@ -30,7 +30,6 @@
 use channel::Channel;
 use memmap2::Mmap;
 use std::{
-    collections::HashMap,
     fs::File,
     io::{Error, ErrorKind},
     path::{Path, PathBuf},
@@ -57,7 +56,7 @@ pub struct Abf {
     channels_count: u32,
     sweeps_count: u32,
     sampling_rate: f32,
-    channels: HashMap<u32, Channel>,
+    channels: Vec<Channel>,
     path: PathBuf,
 }
 
@@ -102,7 +101,7 @@ impl Abf {
         if sweep >= self.sweeps_count {
             return None;
         }
-        self.channels.get(&channel)?.get_sweep(sweep)
+        self.channels.get(channel as usize)?.get_sweep(sweep)
     }
 
     pub fn get_file_signature(&self) -> AbfKind {
@@ -110,11 +109,11 @@ impl Abf {
     }
 
     pub fn get_channel(&self, index: u32) -> Option<&Channel> {
-        self.channels.get(&index)
+        self.channels.get(index as usize)
     }
 
     pub fn get_channels(&self) -> impl Iterator<Item = &Channel> {
-        self.channels.values()
+        self.channels.iter()
     }
 
     pub fn get_sampling_rate(&self) -> f32 {

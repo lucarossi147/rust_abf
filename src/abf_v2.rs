@@ -103,24 +103,20 @@ impl Abf {
             sampling_rate,
             channels: (0..number_of_channels)
                 .map(|ch| {
-                    let data = data.get(&ch).unwrap();
-                    (
-                        ch as u32,
-                        Channel::new(
-                            data.to_owned(),
-                            indexed_strings
-                                .get(adc_infos[ch].adc_units_index)
-                                .unwrap_or(&"nan".to_string())
-                                .clone(),
-                            gains[ch],
-                            offsets[ch],
-                            indexed_strings
-                                .get(adc_infos[ch].adc_channel_name_index)
-                                .unwrap_or(&"nan".to_string())
-                                .clone(),
-                            sweeps_count,
-                            file_kind,
-                        ),
+                    Channel::new(
+                        data[ch].clone(),
+                        indexed_strings
+                            .get(adc_infos[ch].adc_units_index)
+                            .unwrap_or(&"nan".to_string())
+                            .clone(),
+                        gains[ch],
+                        offsets[ch],
+                        indexed_strings
+                            .get(adc_infos[ch].adc_channel_name_index)
+                            .unwrap_or(&"nan".to_string())
+                            .clone(),
+                        sweeps_count,
+                        file_kind,
                     )
                 })
                 .collect(),
