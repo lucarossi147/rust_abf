@@ -136,6 +136,42 @@ mod tests {
     }
 
     #[test]
+    fn test_time_axis_len_matches_sweep_len_for_every_fixture() {
+        for path in [
+            "tests/test_abf/14o08011_ic_pair.abf",
+            "tests/test_abf/18425108.abf",
+        ] {
+            let abf = Abf::from_file(Path::new(path)).unwrap();
+            let expected_len = abf.get_channel(0).unwrap().get_sweep_len();
+            assert_eq!(
+                abf.get_time_axis().len(),
+                expected_len,
+                "get_time_axis() length mismatch for {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_time_axis_values_for_multi_sweep_file() {
+        // 14o08011_ic_pair.abf has 3 sweeps of 600_000 points each; get_time_axis()
+        // must return one time point per sample of a single sweep, not divide by
+        // sweeps_count a second time.
+        let abf = Abf::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
+        let sampling_rate = abf.get_sampling_rate() as f64;
+        let time_axis = abf.get_time_axis();
+        assert_eq!(time_axis.len(), 600_000);
+        let last = time_axis.len() - 1;
+        for k in [0usize, 1, last] {
+            let expected = (k as f64 / sampling_rate) as f32;
+            assert!(
+                (time_axis[k] - expected).abs() < 1e-4,
+                "index {k}: got {}, expected {expected}",
+                time_axis[k]
+            );
+        }
+    }
+
+    #[test]
     fn test_time_duration() {
         let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
         let duration = abf.get_time_duration().unwrap();

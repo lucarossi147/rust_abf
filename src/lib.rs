@@ -133,3 +133,42 @@ impl Abf {
 //     fn get_data(&self, channel: usize) -> Option<Vec<f32>>;
 //     fn get_file_signature(&self) -> AbfKind;
 // }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn abf_with_channels(channels: HashMap<u32, Channel>) -> Abf {
+        Abf {
+            abf_kind: AbfKind::AbfV2,
+            channels_count: channels.len() as u32,
+            sweeps_count: 1,
+            sampling_rate: 10_000.0,
+            channels,
+            path: PathBuf::new(),
+        }
+    }
+
+    #[test]
+    fn get_time_axis_is_empty_when_there_are_no_channels() {
+        let abf = abf_with_channels(HashMap::new());
+        assert!(abf.get_time_axis().is_empty());
+    }
+
+    #[test]
+    fn get_time_axis_does_not_panic_when_channel_zero_is_missing() {
+        let channel = Channel::new(
+            std::sync::Arc::from(vec![1_i16, 2, 3]),
+            "mV".to_string(),
+            1.0,
+            0.0,
+            "IN 1".to_string(),
+            1,
+            channel::FileKind::I16,
+        );
+        let mut channels = HashMap::new();
+        channels.insert(1, channel);
+        let abf = abf_with_channels(channels);
+        assert_eq!(abf.get_time_axis().len(), 3);
+    }
+}
