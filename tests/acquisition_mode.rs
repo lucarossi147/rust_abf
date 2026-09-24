@@ -54,9 +54,8 @@ fn section_entry_byte_count(bytes: &[u8], section_header_offset: usize) -> usize
 }
 
 fn set_operation_mode(bytes: &mut [u8], mode: i16) {
-    let offset =
-        section_block_offset(bytes, PROTOCOL_SECTION_HEADER_OFFSET)
-            + OPERATION_MODE_OFFSET_IN_PROTOCOL_BLOCK;
+    let offset = section_block_offset(bytes, PROTOCOL_SECTION_HEADER_OFFSET)
+        + OPERATION_MODE_OFFSET_IN_PROTOCOL_BLOCK;
     bytes[offset..offset + 2].copy_from_slice(&mode.to_le_bytes());
 }
 

@@ -24,6 +24,8 @@ pub enum AbfError {
         section: &'static str,
         reason: String,
     },
+    /// The file uses a recognized but not-yet-supported feature.
+    Unsupported(String),
 }
 
 impl fmt::Display for AbfError {
@@ -43,6 +45,7 @@ impl fmt::Display for AbfError {
             AbfError::InvalidSection { section, reason } => {
                 write!(f, "invalid {section} section: {reason}")
             }
+            AbfError::Unsupported(reason) => write!(f, "unsupported: {reason}"),
         }
     }
 }
