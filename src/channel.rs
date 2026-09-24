@@ -1,44 +1,67 @@
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use std::sync::Arc;
 
-#[derive(Clone, Copy)]
+/// The on-disk sample representation of a channel, mirroring ABF2's `nDataFormat`
+/// header field (`0` => int16, anything else => float32).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileKind {
     I16,
-    //  F32,
+    F32,
+}
+
+/// The decoded, per-channel sample buffer.
+///
+/// `nDataFormat == 0` files store gain/offset-scaled int16 samples; any other
+/// value means samples are already stored as physical-unit float32 values
+/// (pyABF does not apply gain/offset to float data either).
+#[derive(Clone)]
+pub enum ChannelValues {
+    I16(Arc<[i16]>),
+    F32(Arc<[f32]>),
+}
+
+impl ChannelValues {
+    pub fn file_kind(&self) -> FileKind {
+        match self {
+            ChannelValues::I16(_) => FileKind::I16,
+            ChannelValues::F32(_) => FileKind::F32,
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            ChannelValues::I16(v) => v.len(),
+            ChannelValues::F32(v) => v.len(),
+        }
+    }
 }
 
 #[derive(Clone)]
 pub struct Channel {
-    // channel_kind: ChannelKind,
-    values: Arc<[i16]>,
+    values: ChannelValues,
     uom: String,
     gain: f32,
     offset: f32,
     label: String,
     sweeps_count: u32,
-    file_kind: FileKind,
 }
 
 impl Channel {
     pub fn new(
-        // channel_kind: ChannelKind,
-        values: Arc<[i16]>,
+        values: ChannelValues,
         uom: String,
         gain: f32,
         offset: f32,
         label: String,
         sweeps_count: u32,
-        file_kind: FileKind,
     ) -> Self {
         Self {
-            // channel_kind,
             values,
             uom,
             gain,
             offset,
             label,
             sweeps_count,
-            file_kind,
         }
     }
     pub fn get_uom(&self) -> &str {
@@ -57,27 +80,51 @@ impl Channel {
         self.offset
     }
 
+    pub fn get_file_kind(&self) -> FileKind {
+        self.values.file_kind()
+    }
+
+    /// Returns the raw, unscaled int16 samples for a sweep.
+    ///
+    /// Only meaningful for [`FileKind::I16`] channels. Float32 channels are
+    /// already stored in physical units (see [`Channel::get_sweep`]), so
+    /// there is no int16 representation to hand back and this always
+    /// returns `None` for them.
     pub fn get_raw_sweep(&self, sweep: u32) -> Option<Vec<i16>> {
+        if sweep >= self.sweeps_count {
+            return None;
+        }
+        match &self.values {
+            ChannelValues::I16(values) => {
+                let len = self.get_sweep_len();
+                let start = len * sweep as usize;
+                let end = start + len;
+                Some(values[start..end].par_iter().copied().collect())
+            }
+            ChannelValues::F32(_) => None,
+        }
+    }
+
+    /// Returns the sweep in physical units.
+    ///
+    /// Int16 data is scaled by `gain`/`offset`; float32 data is returned as
+    /// stored, since pyABF does not apply gain/offset scaling to it either.
+    pub fn get_sweep(&self, sweep: u32) -> Option<Vec<f32>> {
         if sweep >= self.sweeps_count {
             return None;
         }
         let len = self.get_sweep_len();
         let start = len * sweep as usize;
         let end = start + len;
-        Some(self.values[start..end].par_iter().map(|v| *v).collect())
-    }
-
-    pub fn get_sweep(&self, sweep: u32) -> Option<Vec<f32>> {
-        let sweep = self.get_raw_sweep(sweep);
-        sweep.map(|s| match self.file_kind {
-            // data in int, needs to be multiplied for the scaling factors
-            FileKind::I16 => s
-                .into_iter()
-                .map(|v| v as f32)
-                .map(|v| v * self.gain + self.offset)
-                .collect(),
-            // FileKind::F32 => data.collect(),
-        })
+        match &self.values {
+            ChannelValues::I16(values) => Some(
+                values[start..end]
+                    .par_iter()
+                    .map(|v| *v as f32 * self.gain + self.offset)
+                    .collect(),
+            ),
+            ChannelValues::F32(values) => Some(values[start..end].to_vec()),
+        }
     }
 
     pub fn get_sweeps(&self) -> impl Iterator<Item = Option<Vec<f32>>> + '_ {
@@ -95,13 +142,23 @@ mod tests {
 
     fn make_channel(values: Vec<i16>, sweeps_count: u32) -> Channel {
         Channel::new(
-            values.into(),
+            ChannelValues::I16(values.into()),
             "mV".to_string(),
             1.0,
             0.0,
             "test".to_string(),
             sweeps_count,
-            FileKind::I16,
+        )
+    }
+
+    fn make_f32_channel(values: Vec<f32>, sweeps_count: u32) -> Channel {
+        Channel::new(
+            ChannelValues::F32(values.into()),
+            "pA".to_string(),
+            1.0,
+            0.0,
+            "test".to_string(),
+            sweeps_count,
         )
     }
 
@@ -132,5 +189,46 @@ mod tests {
             assert_eq!(ch.get_raw_sweep(s).unwrap().len(), 2);
         }
         assert_eq!(ch.get_raw_sweep(2).unwrap(), vec![50, 60]);
+    }
+
+    #[test]
+    fn get_file_kind_reflects_the_stored_representation() {
+        assert_eq!(make_channel(vec![0], 1).get_file_kind(), FileKind::I16);
+        assert_eq!(
+            make_f32_channel(vec![0.0], 1).get_file_kind(),
+            FileKind::F32
+        );
+    }
+
+    #[test]
+    fn f32_channel_get_raw_sweep_is_always_none() {
+        let ch = make_f32_channel(vec![1.5, -2.25, 3.0, 4.0], 2);
+        assert_eq!(ch.get_raw_sweep(0), None);
+        assert_eq!(ch.get_raw_sweep(1), None);
+    }
+
+    #[test]
+    fn f32_channel_get_sweep_returns_values_unscaled() {
+        let mut ch = make_f32_channel(vec![1.5, -2.25, 3.0, 4.0], 2);
+        // gain/offset must be ignored for float data even if non-default.
+        ch.gain = 2.0;
+        ch.offset = 100.0;
+        assert_eq!(ch.get_sweep(0).unwrap(), vec![1.5, -2.25]);
+        assert_eq!(ch.get_sweep(1).unwrap(), vec![3.0, 4.0]);
+    }
+
+    #[test]
+    fn f32_channel_get_sweep_returns_none_out_of_range() {
+        let ch = make_f32_channel(vec![1.5, -2.25], 1);
+        assert_eq!(ch.get_sweep(1), None);
+    }
+
+    #[test]
+    fn i16_channel_get_sweep_applies_gain_and_offset() {
+        let mut ch = make_channel(vec![1, 2, 3, 4], 2);
+        ch.gain = 2.0;
+        ch.offset = 1.0;
+        assert_eq!(ch.get_sweep(0).unwrap(), vec![3.0, 5.0]);
+        assert_eq!(ch.get_sweep(1).unwrap(), vec![7.0, 9.0]);
     }
 }

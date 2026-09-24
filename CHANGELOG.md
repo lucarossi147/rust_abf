@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Fixed float32 ABF2 files (`nDataFormat != 0`) being silently decoded as int16, corrupting sample values: `data_section::read` now decodes samples according to the header's `nDataFormat` field, and `Channel` stores samples as either `i16` or `f32` (`channel::ChannelValues`). Added `Channel::get_file_kind()`. `Channel::get_raw_sweep()` now returns `None` for float32 channels (there is no meaningful raw-integer representation); `Channel::get_sweep()` returns float32 samples as stored, unscaled, matching pyABF's behavior of not applying gain/offset to float32 data (see issue #8). No float32 fixture could be found/added in this change — see PR/issue discussion.
 - Fixed `Abf::get_time_axis()` returning a truncated axis (divided sweep length by `sweeps_count` a second time) for multi-sweep files, and removed a panic when channel 0 is missing. Now computed directly from a channel's sweep length in `f64` to avoid drift on long recordings, and returns an empty `Vec` if there are no channels.
 - Fixed `Abf::get_channels()`/`get_channel()` returning channels in non-deterministic order: `channels` is now a `Vec<Channel>` indexed by ADC section order instead of a `HashMap<u32, Channel>`; `data_section::read` now returns a `Vec<Arc<[i16]>>` indexed by channel instead of a `HashMap`.
 - Added `criterion` benchmarks (`benches/read.rs`) covering `open`, `read_all_sweeps_f32`, and `read_all_sweeps_raw` for each ABF2 test fixture. Run with `cargo bench`.

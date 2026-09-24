@@ -157,13 +157,12 @@ mod tests {
     #[test]
     fn get_time_axis_uses_sweep_len_from_first_available_channel() {
         let channel = Channel::new(
-            std::sync::Arc::from(vec![1_i16, 2, 3]),
+            channel::ChannelValues::I16(std::sync::Arc::from(vec![1_i16, 2, 3])),
             "mV".to_string(),
             1.0,
             0.0,
             "IN 0".to_string(),
             1,
-            channel::FileKind::I16,
         );
         let abf = abf_with_channels(vec![channel]);
         assert_eq!(abf.get_time_axis().len(), 3);

@@ -1,5 +1,4 @@
 mod section;
-use super::channel::FileKind;
 use super::{Abf, Channel};
 use crate::conversion_util as cu;
 use crate::AbfKind;
@@ -17,7 +16,7 @@ impl Abf {
         // let file_start_time_ms = cu::from_byte_array_to_u32(&memmap, 20).unwrap();
         // let stopwatch_time = cu::from_byte_array_to_u32(&memmap, 24).unwrap();
         // let file_type = cu::from_byte_array_to_u16(&memmap, 28);
-        let _data_format: u16 = cu::from_byte_array_to_u16(&memmap, 30);
+        let data_format: u16 = cu::from_byte_array_to_u16(&memmap, 30);
         // let simultaneus_scan: u16 = cu::from_byte_array_to_u16(&memmap, 32);
         // let crc_enable: u16 = cu::from_byte_array_to_u16(&memmap, 34);
         // let file_crc: u32 = cu::from_byte_array_to_u32(&memmap, 36).unwrap();
@@ -56,7 +55,7 @@ impl Abf {
         // let stats_section = sec_prod.produce_from(348);
 
         let number_of_channels = adc_section.get_channel_count();
-        let data = data_section.read(number_of_channels);
+        let data = data_section.read(number_of_channels, data_format);
 
         // let dataRate = (1e6 / _protocolSection.fADCSequenceInterval)
         let adc_infos = adc_section.get_adc_infos();
@@ -94,8 +93,6 @@ impl Abf {
             0 | 1 => 1,
             n => n,
         };
-        // let file_kind = if data_format == 0 {FileKind::I16} else {FileKind::F32};
-        let file_kind = FileKind::I16;
         Self {
             abf_kind,
             channels_count: number_of_channels as u32,
@@ -116,7 +113,6 @@ impl Abf {
                             .unwrap_or(&"nan".to_string())
                             .clone(),
                         sweeps_count,
-                        file_kind,
                     )
                 })
                 .collect(),
