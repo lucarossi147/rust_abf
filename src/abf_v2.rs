@@ -86,3 +86,25 @@ impl Abf {
         })
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gap_free_mode_always_yields_a_single_sweep() {
+        assert_eq!(sweep_count(3, 0), 1);
+        assert_eq!(sweep_count(3, 1), 1);
+        assert_eq!(sweep_count(3, 7), 1);
+    }
+
+    #[test]
+    fn other_modes_use_actual_episodes() {
+        for op_mode in [1, 2, 4, 5] {
+            assert_eq!(sweep_count(op_mode, 0), 1);
+            assert_eq!(sweep_count(op_mode, 1), 1);
+            assert_eq!(sweep_count(op_mode, 42), 42);
+        }
+    }
+}

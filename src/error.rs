@@ -97,6 +97,10 @@ mod tests {
             .to_string(),
             "invalid data section: bad width"
         );
+        assert_eq!(
+            AbfError::Unsupported("variable-length event-driven sweeps".to_string()).to_string(),
+            "unsupported: variable-length event-driven sweeps"
+        );
     }
 
     #[test]
