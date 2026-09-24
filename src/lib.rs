@@ -26,17 +26,19 @@
 // !     println!("Channel 0, Sweep 0 data: {:?}", data);
 // ! }
 // ! ```
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
 use channel::Channel;
 use memmap2::Mmap;
 use std::{
     fs::File,
-    io::{Error, ErrorKind},
     path::{Path, PathBuf},
 };
 
-mod conversion_util;
-use conversion_util as cu;
+mod byte_reader;
+mod error;
+pub use error::AbfError;
+
 mod abf_v1;
 pub mod abf_v2;
 mod channel;
@@ -61,17 +63,17 @@ pub struct Abf {
 }
 
 impl Abf {
-    pub fn from_file(filepath: &Path) -> Result<Abf, Error> {
+    pub fn from_file(filepath: &Path) -> Result<Abf, AbfError> {
         let path = PathBuf::from(filepath);
-        let memmap = unsafe { Mmap::map(&File::open(&path)?)? };
-        let file_signature_str = cu::from_bytes_array_to_string(&memmap, 0, 4);
-        match file_signature_str {
-            Ok(v) => match v {
-                "ABF " => todo!(),
-                "ABF2" => Ok(Abf::from_abf_v2(memmap, path)),
-                _ => Err(Error::new(ErrorKind::InvalidData, "Incorrect file type")),
-            },
-            _ => Err(Error::new(ErrorKind::InvalidData, "Incorrect file type")),
+        let file = File::open(&path)?;
+        let memmap = unsafe { Mmap::map(&file)? };
+        let signature = byte_reader::ByteReader::new(&memmap)
+            .read_str("file_signature", 0, 4)
+            .ok();
+        match signature {
+            Some("ABF2") => Abf::from_abf_v2(memmap, path),
+            Some("ABF ") => Err(AbfError::UnsupportedVersion("ABF1".to_string())),
+            _ => Err(AbfError::InvalidSignature),
         }
     }
 
@@ -134,6 +136,7 @@ impl Abf {
 // }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

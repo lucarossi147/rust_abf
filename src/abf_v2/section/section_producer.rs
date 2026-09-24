@@ -1,48 +1,41 @@
 use super::*;
-use memmap2::Mmap;
+use crate::byte_reader::ByteReader;
+use crate::error::AbfError;
 
 pub struct SectionProducer<'a> {
-    mmap: &'a Mmap,
+    reader: ByteReader<'a>,
 }
 
 impl<'a> SectionProducer<'a> {
-    pub fn new(mmap: &'a Mmap) -> Self {
-        Self { mmap }
+    pub fn new(reader: ByteReader<'a>) -> Self {
+        Self { reader }
     }
-    pub fn get_protocol_section(&self) -> Section<'_, ProtocolSectionType> {
+    pub fn get_protocol_section(&self) -> Result<Section<'a, ProtocolSectionType>, AbfError> {
         Section::new(
-            self.mmap,
+            self.reader,
             76,
             std::marker::PhantomData::<ProtocolSectionType>,
         )
     }
-    pub fn get_adc_section(&self) -> Section<'_, AdcSectionType> {
-        Section::new(self.mmap, 92, std::marker::PhantomData::<AdcSectionType>)
+    pub fn get_adc_section(&self) -> Result<Section<'a, AdcSectionType>, AbfError> {
+        Section::new(self.reader, 92, std::marker::PhantomData::<AdcSectionType>)
     }
 
-    pub fn get_dac_section(&self) -> Section<'_, DacSectionType> {
-        Section::new(self.mmap, 108, std::marker::PhantomData::<DacSectionType>)
+    pub fn get_dac_section(&self) -> Result<Section<'a, DacSectionType>, AbfError> {
+        Section::new(self.reader, 108, std::marker::PhantomData::<DacSectionType>)
     }
-    // pub fn get_epoch_section(&self) -> Section<EpochSectionType> {
-    //     Section::new(self.mmap, 124, std::marker::PhantomData::<EpochSectionType>)
-    // }
-    // pub fn get_adc_per_dac_section(&self) -> Section<AdcPerDacSectionType> {
-    //     Section::new(self.mmap, 140, std::marker::PhantomData::<AdcPerDacSectionType>)
-    // }
-    // pub fn get_epoch_per_dac_section(&self) -> Section<EpochPerDacSectionType> {
-    //     Section::new(self.mmap, 156, std::marker::PhantomData::<EpochPerDacSectionType>)
-    // }
-    pub fn get_strings_section(&self) -> Section<'_, StringsSectionType> {
+    pub fn get_strings_section(&self) -> Result<Section<'a, StringsSectionType>, AbfError> {
         Section::new(
-            self.mmap,
+            self.reader,
             220,
             std::marker::PhantomData::<StringsSectionType>,
         )
     }
-    pub fn get_data_section(&self) -> Section<'_, DataSectionType> {
-        Section::new(self.mmap, 236, std::marker::PhantomData::<DataSectionType>)
+    pub fn get_data_section(&self) -> Result<Section<'a, DataSectionType>, AbfError> {
+        Section::new(
+            self.reader,
+            236,
+            std::marker::PhantomData::<DataSectionType>,
+        )
     }
-    // pub fn get_tag_section(&self) -> Section<TagSectionType> {
-    //     Section::new(self.mmap, 252, std::marker::PhantomData::<TagSectionType>)
-    // }
 }

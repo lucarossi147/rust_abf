@@ -1,5 +1,6 @@
 use super::{AdcSectionType, Section};
-use crate::conversion_util as cu;
+use crate::byte_reader::checked_offset;
+use crate::error::AbfError;
 
 // Mirrors the full ABF2 ADC section header (see pyABF's ADCSection); not every
 // field is consumed yet, but they are kept for parsing fidelity with the format.
@@ -34,41 +35,44 @@ pub struct AdcSectionInfo {
     pub adc_units_index: i32,
 }
 
-impl<'a> Section<'a, AdcSectionType> {
-    pub fn get_adc_infos(self) -> Vec<AdcSectionInfo> {
+const SECTION: &str = "adc";
+
+impl Section<'_, AdcSectionType> {
+    pub fn get_adc_infos(&self) -> Result<Vec<AdcSectionInfo>, AbfError> {
         (0..self.item_count)
-            .map(|ch| self.block_number + ch * self.byte_count)
-            .flat_map(usize::try_from)
-            .map(|from| {
-                let adc_num = cu::mmap_to_i16(self.mmap, from);
-                let telegraph_enable = cu::mmap_to_i16(self.mmap, from + 2);
-                let telegraph_instrument = cu::mmap_to_i16(self.mmap, from + 4);
-                let telegraph_addit_gain: f32 = cu::mmap_to_f32(self.mmap, from + 6);
-                let telegraph_filter: f32 = cu::mmap_to_f32(self.mmap, from + 10);
-                let telegraph_membrane_cap: f32 = cu::mmap_to_f32(self.mmap, from + 14);
-                let telegraph_mode = cu::mmap_to_i16(self.mmap, from + 18);
-                let telegraph_access_resistance = cu::mmap_to_f32(self.mmap, from + 20);
-                let adc_p_to_l_channel_map = cu::mmap_to_i16(self.mmap, from + 24);
-                let adc_sampling_seq = cu::mmap_to_i16(self.mmap, from + 26);
-                let adc_programmable_gain = cu::mmap_to_f32(self.mmap, from + 28);
-                let adc_display_amplification = cu::mmap_to_f32(self.mmap, from + 32);
-                let adc_display_offset = cu::mmap_to_f32(self.mmap, from + 36);
-                let instrument_scale_factor = cu::mmap_to_f32(self.mmap, from + 40);
-                let instrument_offset = cu::mmap_to_f32(self.mmap, from + 44);
-                let signal_gain = cu::mmap_to_f32(self.mmap, from + 48);
-                let signal_offset = cu::mmap_to_f32(self.mmap, from + 52);
-                let signal_lowpass_filter = cu::mmap_to_f32(self.mmap, from + 56);
-                let signal_highpass_filter = cu::mmap_to_f32(self.mmap, from + 60);
-                let lowpass_filter_type = self.mmap[from + 64];
-                let highpass_filter_type = self.mmap[from + 65];
-                let post_process_lowpass_filter = cu::mmap_to_f32(self.mmap, from + 66);
-                let post_process_lowpass_filter_type = self.mmap[from + 70] as i8;
-                let enabled_during_pn = self.mmap[from + 71];
-                let stats_channel_polarity = cu::mmap_to_i16(self.mmap, from + 72);
-                let adc_channel_name_index = cu::mmap_to_i32(self.mmap, from + 74);
-                let adc_units_index = cu::mmap_to_i32(self.mmap, from + 78);
-                // let telegraph_instrument_name = get_telegraph_name(telegraph_instrument);
-                AdcSectionInfo {
+            .map(|ch| -> Result<AdcSectionInfo, AbfError> {
+                let from = self.item_offset(ch)?;
+                let field = |extra: usize| checked_offset(from, extra, SECTION);
+
+                let adc_num = self.reader.read_i16(SECTION, field(0)?)?;
+                let telegraph_enable = self.reader.read_i16(SECTION, field(2)?)?;
+                let telegraph_instrument = self.reader.read_i16(SECTION, field(4)?)?;
+                let telegraph_addit_gain = self.reader.read_f32(SECTION, field(6)?)?;
+                let telegraph_filter = self.reader.read_f32(SECTION, field(10)?)?;
+                let telegraph_membrane_cap = self.reader.read_f32(SECTION, field(14)?)?;
+                let telegraph_mode = self.reader.read_i16(SECTION, field(18)?)?;
+                let telegraph_access_resistance = self.reader.read_f32(SECTION, field(20)?)?;
+                let adc_p_to_l_channel_map = self.reader.read_i16(SECTION, field(24)?)?;
+                let adc_sampling_seq = self.reader.read_i16(SECTION, field(26)?)?;
+                let adc_programmable_gain = self.reader.read_f32(SECTION, field(28)?)?;
+                let adc_display_amplification = self.reader.read_f32(SECTION, field(32)?)?;
+                let adc_display_offset = self.reader.read_f32(SECTION, field(36)?)?;
+                let instrument_scale_factor = self.reader.read_f32(SECTION, field(40)?)?;
+                let instrument_offset = self.reader.read_f32(SECTION, field(44)?)?;
+                let signal_gain = self.reader.read_f32(SECTION, field(48)?)?;
+                let signal_offset = self.reader.read_f32(SECTION, field(52)?)?;
+                let signal_lowpass_filter = self.reader.read_f32(SECTION, field(56)?)?;
+                let signal_highpass_filter = self.reader.read_f32(SECTION, field(60)?)?;
+                let lowpass_filter_type = self.reader.read_u8(SECTION, field(64)?)?;
+                let highpass_filter_type = self.reader.read_u8(SECTION, field(65)?)?;
+                let post_process_lowpass_filter = self.reader.read_f32(SECTION, field(66)?)?;
+                let post_process_lowpass_filter_type = self.reader.read_i8(SECTION, field(70)?)?;
+                let enabled_during_pn = self.reader.read_u8(SECTION, field(71)?)?;
+                let stats_channel_polarity = self.reader.read_i16(SECTION, field(72)?)?;
+                let adc_channel_name_index = self.reader.read_i32(SECTION, field(74)?)?;
+                let adc_units_index = self.reader.read_i32(SECTION, field(78)?)?;
+
+                Ok(AdcSectionInfo {
                     adc_num,
                     telegraph_enable,
                     telegraph_instrument,
@@ -96,12 +100,12 @@ impl<'a> Section<'a, AdcSectionType> {
                     stats_channel_polarity,
                     adc_channel_name_index,
                     adc_units_index,
-                }
+                })
             })
             .collect()
     }
 
     pub fn get_channel_count(&self) -> usize {
-        usize::try_from(self.item_count).unwrap()
+        usize::try_from(self.item_count).unwrap_or(0)
     }
 }
