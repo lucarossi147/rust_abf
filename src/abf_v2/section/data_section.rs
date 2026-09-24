@@ -29,3 +29,26 @@ impl Section<'_, DataSectionType> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_by_channel_deinterleaves_a_single_channel() {
+        let data = vec![10_i16, 20, 30];
+        let result = split_by_channel(data.into_par_iter(), 1);
+        assert_eq!(result.len(), 1);
+        assert_eq!(&*result[0], &[10, 20, 30]);
+    }
+
+    #[test]
+    fn split_by_channel_deinterleaves_multiple_channels() {
+        // interleaved as ch0, ch1, ch0, ch1, ch0, ch1
+        let data = vec![1.0_f32, -1.0, 2.0, -2.0, 3.0, -3.0];
+        let result = split_by_channel(data.into_par_iter(), 2);
+        assert_eq!(result.len(), 2);
+        assert_eq!(&*result[0], &[1.0, 2.0, 3.0]);
+        assert_eq!(&*result[1], &[-1.0, -2.0, -3.0]);
+    }
+}

@@ -133,4 +133,40 @@ mod tests {
         }
         assert_eq!(ch.get_raw_sweep(2).unwrap(), vec![50, 60]);
     }
+
+    fn make_f32_channel(values: Vec<f32>, sweeps_count: u32) -> Channel {
+        Channel::new(
+            ChannelValues::F32(values.into()),
+            "pA".to_string(),
+            1.0,
+            0.0,
+            "test".to_string(),
+            sweeps_count,
+        )
+    }
+
+    #[test]
+    fn get_file_kind_reflects_the_stored_representation() {
+        assert_eq!(make_f32_channel(vec![0.0], 1).get_file_kind(), FileKind::F32);
+    }
+
+    #[test]
+    fn f32_channel_get_raw_sweep_is_always_none() {
+        // Float32 ABF2 samples are stored in physical units already (see
+        // get_sweep); there's no meaningful raw-integer representation to
+        // invent, so get_raw_sweep must return None for float channels.
+        let ch = make_f32_channel(vec![1.5, -2.25, 3.0, 4.0], 2);
+        assert_eq!(ch.get_raw_sweep(0), None);
+        assert_eq!(ch.get_raw_sweep(1), None);
+    }
+
+    #[test]
+    fn f32_channel_get_sweep_returns_values_unscaled() {
+        let mut ch = make_f32_channel(vec![1.5, -2.25, 3.0, 4.0], 2);
+        // gain/offset must be ignored for float data, matching pyABF.
+        ch.gain = 2.0;
+        ch.offset = 100.0;
+        assert_eq!(ch.get_sweep(0).unwrap(), vec![1.5, -2.25]);
+        assert_eq!(ch.get_sweep(1).unwrap(), vec![3.0, 4.0]);
+    }
 }

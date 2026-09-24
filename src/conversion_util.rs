@@ -45,3 +45,21 @@ pub fn mmap_to_i32(mmap: &Mmap, from: usize) -> i32 {
     let mut ba = &mmap[from..from + std::mem::size_of::<i32>()];
     ba.read_i32::<LittleEndian>().unwrap()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn byte_array_to_f32_reads_little_endian_ieee754() {
+        let bytes = 1.5f32.to_le_bytes();
+        assert_eq!(byte_array_to_f32(&bytes), 1.5);
+    }
+
+    #[test]
+    fn byte_array_to_f32_reads_only_the_first_four_bytes() {
+        let mut bytes = (-2.25f32).to_le_bytes().to_vec();
+        bytes.extend_from_slice(&[0xAA, 0xBB]);
+        assert_eq!(byte_array_to_f32(&bytes), -2.25);
+    }
+}
