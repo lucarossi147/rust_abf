@@ -1,31 +1,52 @@
 use super::{DataSectionType, Section};
+use crate::channel::ChannelValues;
 use crate::conversion_util as cu;
 use rayon::prelude::*;
 use std::sync::Arc;
 
+/// ABF2 `nDataFormat` value for int16 samples; any other value is float32,
+/// matching pyABF's handling of the header field (see issue #8).
+const DATA_FORMAT_INT16: u16 = 0;
+
 impl Section<'_, DataSectionType> {
-    pub fn read(&self, number_of_channels: usize) -> Vec<Arc<[i16]>> {
+    pub fn read(&self, number_of_channels: usize, data_format: u16) -> Vec<ChannelValues> {
         let from = usize::try_from(self.block_number).unwrap();
         let to = usize::try_from(self.block_number + (self.item_count * self.byte_count)).unwrap();
         let byte_count = usize::try_from(self.byte_count).unwrap();
-        let partial_res = self.mmap[from..to]
-            .par_chunks_exact(byte_count)
-            .map(cu::byte_array_to_i16);
-        match number_of_channels {
-            1 => vec![partial_res.collect::<Arc<[i16]>>()],
-            n => {
-                let partial_res_with_idxs = partial_res.enumerate().map(|(i, e)| (i % n, e));
-                // TODO, the last thing that comes to my mind to speedup even more the program is making the partial_res_with_idxs mutable and remove at every iteration
-                // the entries that have been used (if channel 0 is been used, then we can remove every element of that channel and the next iteration will be 1/n faster)
-                (0..n)
-                    .map(|c| {
-                        partial_res_with_idxs
-                            .clone()
-                            .filter_map(|(idx, e)| if idx == c { Some(e) } else { None })
-                            .collect()
-                    })
-                    .collect()
-            }
+        let chunks = self.mmap[from..to].par_chunks_exact(byte_count);
+        if data_format == DATA_FORMAT_INT16 {
+            split_by_channel(chunks.map(cu::byte_array_to_i16), number_of_channels)
+                .into_iter()
+                .map(ChannelValues::I16)
+                .collect()
+        } else {
+            split_by_channel(chunks.map(cu::byte_array_to_f32), number_of_channels)
+                .into_iter()
+                .map(ChannelValues::F32)
+                .collect()
+        }
+    }
+}
+
+fn split_by_channel<I, T>(partial_res: I, number_of_channels: usize) -> Vec<Arc<[T]>>
+where
+    I: IndexedParallelIterator<Item = T> + Clone,
+    T: Send,
+{
+    match number_of_channels {
+        1 => vec![partial_res.collect::<Arc<[T]>>()],
+        n => {
+            let partial_res_with_idxs = partial_res.enumerate().map(|(i, e)| (i % n, e));
+            // TODO, the last thing that comes to my mind to speedup even more the program is making the partial_res_with_idxs mutable and remove at every iteration
+            // the entries that have been used (if channel 0 is been used, then we can remove every element of that channel and the next iteration will be 1/n faster)
+            (0..n)
+                .map(|c| {
+                    partial_res_with_idxs
+                        .clone()
+                        .filter_map(|(idx, e)| if idx == c { Some(e) } else { None })
+                        .collect()
+                })
+                .collect()
         }
     }
 }
