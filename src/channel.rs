@@ -99,7 +99,8 @@ impl Channel {
                 let len = self.get_sweep_len();
                 let start = len * sweep as usize;
                 let end = start + len;
-                Some(values[start..end].par_iter().copied().collect())
+                let slice = values.get(start..end)?;
+                Some(slice.par_iter().copied().collect())
             }
             ChannelValues::F32(_) => None,
         }
@@ -117,13 +118,16 @@ impl Channel {
         let start = len * sweep as usize;
         let end = start + len;
         match &self.values {
-            ChannelValues::I16(values) => Some(
-                values[start..end]
-                    .par_iter()
-                    .map(|v| *v as f32 * self.gain + self.offset)
-                    .collect(),
-            ),
-            ChannelValues::F32(values) => Some(values[start..end].to_vec()),
+            ChannelValues::I16(values) => {
+                let slice = values.get(start..end)?;
+                Some(
+                    slice
+                        .par_iter()
+                        .map(|v| *v as f32 * self.gain + self.offset)
+                        .collect(),
+                )
+            }
+            ChannelValues::F32(values) => Some(values.get(start..end)?.to_vec()),
         }
     }
 
@@ -137,6 +141,7 @@ impl Channel {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 
