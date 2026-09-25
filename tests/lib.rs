@@ -9,12 +9,12 @@ mod tests {
         let abf = Abf::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
         let _elapsed_time = start_time.elapsed();
         // println!("{:?}", elapsed_time);
-        assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
-        let ch_num = abf.get_channels_count();
+        assert!(matches!(abf.kind(), AbfKind::AbfV2));
+        let ch_num = abf.channel_count();
         for ch in 0..ch_num {
-            let data = abf.get_sweep_in_channel(0, ch).unwrap();
+            let data = abf.sweep(ch, 0).unwrap();
             assert_eq!(&data.len(), &600_000);
-            assert_eq!(abf.get_channel(ch).map(|ch| ch.get_uom()), Some("mV"));
+            assert_eq!(abf.channel(ch).map(|ch| ch.uom()), Some(Some("mV")));
             assert_eq!(&data.len(), &600_000);
         }
         // assert!(elapsed_time.as_millis()<100);
@@ -25,13 +25,13 @@ mod tests {
         let start_time = Instant::now();
         let abf = Abf::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
         let _elapsed_time = start_time.elapsed();
-        let ch0 = abf.get_channel(0).unwrap();
+        let ch0 = abf.channel(0).unwrap();
         // println!("{:?}", elapsed_time);
-        assert!(matches!(ch0.get_label(), "IN 0"));
-        assert!(matches!(ch0.get_uom(), "mV"));
-        assert!(matches!(abf.get_sweeps_count(), 3));
-        for s in 0..abf.get_sweeps_count() {
-            assert_eq!(ch0.get_sweep(s).map(|ch| ch.len()), Some(600_000));
+        assert!(matches!(ch0.label(), Some("IN 0")));
+        assert!(matches!(ch0.uom(), Some("mV")));
+        assert!(matches!(abf.sweep_count(), 3));
+        for s in 0..abf.sweep_count() {
+            assert_eq!(ch0.sweep(s).map(|ch| ch.len()), Some(600_000));
         }
     }
 
@@ -41,15 +41,15 @@ mod tests {
         let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
         let elapsed_time = start_time.elapsed();
         println!("{:?}", elapsed_time);
-        assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
-        let ch_num = abf.get_channels_count();
+        assert!(matches!(abf.kind(), AbfKind::AbfV2));
+        let ch_num = abf.channel_count();
         for ch in 0..ch_num {
-            let data = abf.get_sweep_in_channel(0, ch).unwrap();
+            let data = abf.sweep(ch, 0).unwrap();
             assert_eq!(&data.len(), &250000);
-            let ch = abf.get_channel(ch).unwrap();
-            println!("Channel {:?} has as uom {:?}", ch.get_label(), ch.get_uom());
+            let ch = abf.channel(ch).unwrap();
+            println!("Channel {:?} has as uom {:?}", ch.label(), ch.uom());
         }
-        assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
+        assert!(matches!(abf.kind(), AbfKind::AbfV2));
     }
 
     #[test]
@@ -58,14 +58,14 @@ mod tests {
         let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
         let elapsed_time = start_time.elapsed();
         println!("{:?}", elapsed_time);
-        assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
-        let ch_num = abf.get_channels_count();
-        let sw_num = abf.get_sweeps_count();
+        assert!(matches!(abf.kind(), AbfKind::AbfV2));
+        let ch_num = abf.channel_count();
+        let sw_num = abf.sweep_count();
         assert_eq!(ch_num, 2);
         assert_eq!(sw_num, 1);
         (0..ch_num).for_each(|ch| {
             (0..sw_num).for_each(|s| {
-                let data = abf.get_sweep_in_channel(s, ch).unwrap();
+                let data = abf.sweep(ch, s).unwrap();
                 assert_eq!(data.len(), 250_000)
             });
         });
@@ -74,15 +74,15 @@ mod tests {
     #[test]
     fn test_iterator_over_channels() {
         let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
-        abf.get_channels()
-            .for_each(|c| assert_eq!(c.get_sweep(0).unwrap().len(), 250_000));
+        abf.channels()
+            .for_each(|c| assert_eq!(c.sweep(0).unwrap().len(), 250_000));
     }
 
     #[test]
     fn test_iterator_over_channels_and_sweeps() {
         let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
-        abf.get_channels()
-            .flat_map(|c| c.get_sweeps())
+        abf.channels()
+            .flat_map(|c| c.sweeps())
             .for_each(|s| assert_eq!(s.unwrap().len(), 250_000));
     }
 
@@ -90,7 +90,7 @@ mod tests {
     fn test_get_path() {
         let path = Path::new("tests/test_abf/18425108.abf");
         let abf = Abf::from_file(path).unwrap();
-        assert_eq!(abf.get_path(), path);
+        assert_eq!(abf.path(), path);
     }
 
     #[test]
@@ -101,37 +101,37 @@ mod tests {
             Abf::from_file(Path::new("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf")).unwrap();
         let elapsed_time = start_time.elapsed();
         println!("{:?}", elapsed_time);
-        assert_eq!(abf.get_sweeps_count(), 1);
-        assert_eq!(abf.get_channels_count(), 2);
-        assert_eq!(abf.get_channel(0).unwrap().get_label(), "I0");
-        assert_eq!(abf.get_channel(0).unwrap().get_uom(), "nA");
-        assert_eq!(abf.get_channel(1).unwrap().get_label(), "V0");
-        assert_eq!(abf.get_channel(1).unwrap().get_uom(), "mV");
+        assert_eq!(abf.sweep_count(), 1);
+        assert_eq!(abf.channel_count(), 2);
+        assert_eq!(abf.channel(0).unwrap().label(), Some("I0"));
+        assert_eq!(abf.channel(0).unwrap().uom(), Some("nA"));
+        assert_eq!(abf.channel(1).unwrap().label(), Some("V0"));
+        assert_eq!(abf.channel(1).unwrap().uom(), Some("mV"));
         // assert!(elapsed_time.as_millis()<900);
     }
 
     #[test]
     fn test_sampling_rate() {
         let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
-        let sr = abf.get_sampling_rate();
+        let sr = abf.sampling_rate();
         assert_eq!(sr, 25000.0);
     }
 
     #[test]
     fn test_channel_gain_and_offset() {
         let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
-        let ch0 = abf.get_channel(0).unwrap();
-        assert!(ch0.get_gain().is_finite());
-        assert!(ch0.get_offset().is_finite());
+        let ch0 = abf.channel(0).unwrap();
+        assert!(ch0.gain().is_finite());
+        assert!(ch0.offset().is_finite());
     }
 
     #[test]
     fn test_time_axis() {
         let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
-        let time_axis = abf.get_time_axis();
+        let time_axis = abf.time_axis();
         assert!(!time_axis.is_empty());
         assert_eq!(time_axis[0], 0.0);
-        let expected_step = 1.0 / abf.get_sampling_rate();
+        let expected_step = 1.0 / abf.sampling_rate();
         assert!((time_axis[1] - expected_step).abs() < f32::EPSILON);
     }
 
@@ -142,9 +142,9 @@ mod tests {
             "tests/test_abf/18425108.abf",
         ] {
             let abf = Abf::from_file(Path::new(path)).unwrap();
-            let expected_len = abf.get_channel(0).unwrap().get_sweep_len();
+            let expected_len = abf.channel(0).unwrap().sweep_len();
             assert_eq!(
-                abf.get_time_axis().len(),
+                abf.time_axis().len(),
                 expected_len,
                 "get_time_axis() length mismatch for {path}"
             );
@@ -157,8 +157,8 @@ mod tests {
         // must return one time point per sample of a single sweep, not divide by
         // sweeps_count a second time.
         let abf = Abf::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
-        let sampling_rate = abf.get_sampling_rate() as f64;
-        let time_axis = abf.get_time_axis();
+        let sampling_rate = abf.sampling_rate() as f64;
+        let time_axis = abf.time_axis();
         assert_eq!(time_axis.len(), 600_000);
         let last = time_axis.len() - 1;
         for k in [0usize, 1, last] {
@@ -174,57 +174,57 @@ mod tests {
     #[test]
     fn test_time_duration() {
         let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
-        let duration = abf.get_time_duration().unwrap();
-        let expected = abf.get_channel(0).unwrap().get_sweep(0).unwrap().len() as f32
-            / abf.get_sweeps_count() as f32
-            / abf.get_sampling_rate();
+        let duration = abf.time_duration().unwrap();
+        let expected = abf.channel(0).unwrap().sweep(0).unwrap().len() as f32
+            / abf.sweep_count() as f32
+            / abf.sampling_rate();
         assert!((duration - expected).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_raw_sweep_out_of_bounds_is_none() {
         let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
-        let ch0 = abf.get_channel(0).unwrap();
-        assert_eq!(ch0.get_raw_sweep(abf.get_sweeps_count() + 1), None);
+        let ch0 = abf.channel(0).unwrap();
+        assert_eq!(ch0.raw_sweep(abf.sweep_count() + 1), None);
     }
 
     #[test]
     fn test_raw_sweep_at_sweeps_count_boundary_is_none() {
         let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
-        let ch0 = abf.get_channel(0).unwrap();
-        let sweeps_count = abf.get_sweeps_count();
-        assert_eq!(ch0.get_raw_sweep(sweeps_count), None);
-        assert_eq!(ch0.get_sweep(sweeps_count), None);
+        let ch0 = abf.channel(0).unwrap();
+        let sweeps_count = abf.sweep_count();
+        assert_eq!(ch0.raw_sweep(sweeps_count), None);
+        assert_eq!(ch0.sweep(sweeps_count), None);
     }
 
     #[test]
-    fn test_sweep_at_u32_max_is_none() {
+    fn test_sweep_at_usize_max_is_none() {
         let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
-        let ch0 = abf.get_channel(0).unwrap();
-        assert_eq!(ch0.get_raw_sweep(u32::MAX), None);
-        assert_eq!(ch0.get_sweep(u32::MAX), None);
+        let ch0 = abf.channel(0).unwrap();
+        assert_eq!(ch0.raw_sweep(usize::MAX), None);
+        assert_eq!(ch0.sweep(usize::MAX), None);
     }
 
     #[test]
     fn test_last_valid_sweep_is_some_with_expected_len() {
         let abf = Abf::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
-        let ch0 = abf.get_channel(0).unwrap();
-        let last = abf.get_sweeps_count() - 1;
-        let sweep = ch0.get_raw_sweep(last).unwrap();
-        assert_eq!(sweep.len(), ch0.get_sweep_len());
+        let ch0 = abf.channel(0).unwrap();
+        let last = abf.sweep_count() - 1;
+        let sweep = ch0.raw_sweep(last).unwrap();
+        assert_eq!(sweep.len(), ch0.sweep_len());
     }
 
     #[test]
     fn test_get_channels_order_is_stable_across_opens() {
         for _ in 0..20 {
             let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
-            let ch_num = abf.get_channels_count();
-            let expected: Vec<String> = (0..ch_num)
-                .map(|i| abf.get_channel(i).unwrap().get_label().to_string())
+            let ch_num = abf.channel_count();
+            let expected: Vec<Option<String>> = (0..ch_num)
+                .map(|i| abf.channel(i).unwrap().label().map(str::to_string))
                 .collect();
-            let actual: Vec<String> = abf
-                .get_channels()
-                .map(|c| c.get_label().to_string())
+            let actual: Vec<Option<String>> = abf
+                .channels()
+                .map(|c| c.label().map(str::to_string))
                 .collect();
             assert_eq!(actual, expected);
         }

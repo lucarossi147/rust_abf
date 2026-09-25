@@ -24,8 +24,8 @@ const OPERATION_MODE_OFFSET_IN_PROTOCOL_BLOCK: usize = 0;
 const EVENT_DRIVEN_VARIABLE_LENGTH_MODE: i16 = 1;
 const GAP_FREE_MODE: i16 = 3;
 
-/// `Abf` doesn't implement `Debug`, so describe just the error side for
-/// assertion messages (mirrors the helper in `tests/errors.rs`).
+/// Describes just the error side for assertion messages (mirrors the helper
+/// in `tests/errors.rs`), so callers don't need to require `T: Debug`.
 fn describe_err<T>(result: &Result<T, AbfError>) -> String {
     match result {
         Ok(_) => "Ok(_)".to_string(),
@@ -105,7 +105,7 @@ fn event_driven_mode_with_uniform_synch_array_lengths_still_parses() {
         "expected Ok(_), got {}",
         describe_err(&result)
     );
-    assert_eq!(result.expect("checked is_ok above").get_sweeps_count(), 3);
+    assert_eq!(result.expect("checked is_ok above").sweep_count(), 3);
 }
 
 #[test]
@@ -121,5 +121,5 @@ fn gap_free_mode_forces_a_single_sweep_regardless_of_actual_episodes() {
         "expected Ok(_), got {}",
         describe_err(&result)
     );
-    assert_eq!(result.expect("checked is_ok above").get_sweeps_count(), 1);
+    assert_eq!(result.expect("checked is_ok above").sweep_count(), 1);
 }

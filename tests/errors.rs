@@ -94,8 +94,8 @@ fn single_byte_corruption_never_panics() {
     panic::set_hook(hook);
 }
 
-/// `Abf` doesn't implement `Debug`, so describe just the error side for
-/// assertion messages.
+/// Describes just the error side for assertion messages, so callers don't
+/// need to require `T: Debug`.
 fn describe_err<T>(result: &Result<T, AbfError>) -> String {
     match result {
         Ok(_) => "Ok(_)".to_string(),

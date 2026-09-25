@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- **Breaking:** Idiomatic, minimal public API cleanup (issue [10] / #15):
+  - `pub mod abf_v2` is now a private module: it was only reachable because of the `pub`, but every item nested under it was already declared with default (crate-private) visibility, so nothing in it was actually part of the public API before this change either — this just makes that explicit. `Abf::from_abf_v2` and `Channel::new` were already `pub(crate)`.
+  - Counts and indices are now `usize` instead of `u32`, and every getter drops its `get_` prefix. Renamed (old name deprecated with `#[deprecated(since = "0.5.0", ...)]`, one dedicated test per alias in `tests/deprecated_api.rs`):
+    - `Abf::get_channels_count` → `Abf::channel_count`
+    - `Abf::get_sweeps_count` → `Abf::sweep_count`
+    - `Abf::get_sweep_in_channel(sweep, channel)` → `Abf::sweep(channel, sweep)` (**argument order swapped** to `(channel, sweep)`, matching `Abf::channel`/`Channel::sweep`)
+    - `Abf::get_file_signature` → `Abf::kind`
+    - `Abf::get_channel` → `Abf::channel`
+    - `Abf::get_channels` → `Abf::channels`
+    - `Abf::get_sampling_rate` → `Abf::sampling_rate`
+    - `Abf::get_path` → `Abf::path`
+    - `Abf::get_time_duration` → `Abf::time_duration`
+    - `Abf::get_time_axis` → `Abf::time_axis`
+    - `Channel::get_uom` → `Channel::uom`
+    - `Channel::get_label` → `Channel::label`
+    - `Channel::get_gain` → `Channel::gain`
+    - `Channel::get_offset` → `Channel::offset`
+    - `Channel::get_file_kind` → `Channel::file_kind`
+    - `Channel::get_raw_sweep(sweep: u32)` → `Channel::raw_sweep(sweep: usize)`
+    - `Channel::get_sweep(sweep: u32)` → `Channel::sweep(sweep: usize)`
+    - `Channel::get_sweeps` → `Channel::sweeps`
+    - `Channel::get_sweep_len` → `Channel::sweep_len`
+  - `Channel::uom`/`Channel::label` now return `Option<&str>` (`None` when the ABF file's string table has no entry for the channel), instead of the literal string `"nan"`. The deprecated `get_uom`/`get_label` aliases preserve the old `"nan"`-fallback behavior. Added `tests/optional_metadata.rs`, byte-patching a fixture's ADC section string indices out of range to cover this.
+  - Added `Channel::index() -> usize`, the channel's position in `Abf::channels()`/`Abf::channel(i)`.
+  - Added a manual `Debug` impl for `Abf` and `Channel` (both hold an `Arc` over the memory-mapped file, which isn't `Debug`; the impls print the metadata fields only, not the mapped bytes).
+  - Added `#[must_use]` to getters.
+  - Added `tests/public_api.rs`, a `#![deny(deprecated)]` compile-level check that exercises only the new API surface.
 - Removed the `byteorder` runtime dependency: `ByteReader` (`src/byte_reader.rs`) now decodes little-endian values with `u16/i16/u32/i32/f32::from_le_bytes` instead of `byteorder::ReadBytesExt`, with no behavior change. `rayon` had already been fully removed from `src/` (and from `Cargo.toml`) in a prior change; `cargo tree -e normal` now shows only `memmap2` as a normal dependency. See `BENCHMARKS.md` for before/after numbers (no measurable change, since `ByteReader` was never on the per-sample decode path).
 - Added `Channel::read_sweep_into(&self, sweep: usize, out: &mut [f32]) -> Result<(), AbfError>`, decoding a sweep's samples in physical units directly into a caller-supplied buffer instead of allocating a new `Vec` per call; returns `Err(AbfError::SweepOutOfRange)`/`Err(AbfError::BufferLengthMismatch)` instead of modifying `out` on a bad sweep index or buffer length. Added `Channel::sweep_iter`/`Channel::raw_sweep_iter`, lazy `ExactSizeIterator`s over a sweep's scaled/raw samples that decode on demand instead of collecting into a `Vec` (`raw_sweep_iter` returns `None` for float32 channels, matching `get_raw_sweep`). `Channel::get_sweep`/`get_raw_sweep` are now implemented on top of these instead of their own separate decode path, and are unchanged from the caller's perspective. Added `tests/memory.rs::read_sweep_into_does_not_allocate_after_the_buffer_is_reused`, asserting that reading every sweep of every channel through one reused buffer allocates no more than the buffer itself. Added `read_all_sweeps_into` to `benches/read.rs`. **Breaking:** dropped the `rayon`-parallel decode `get_sweep`/`get_raw_sweep` used internally (and the now-unused `rayon` dependency), since `read_sweep_into` needs a provable zero-allocation guarantee that calling into rayon's global thread pool cannot give; see `BENCHMARKS.md` for the resulting timing regression (up to ~49% slower on `read_all_sweeps_raw`) and the reasoning for accepting it.
 - Changed: `Abf::from_file` no longer copies or de-interleaves sample data into `Vec<i16>`/`Vec<f32>` buffers at open time. `Channel` now decodes each sweep lazily, straight out of the memory-mapped file, via a new internal `Storage` enum (`Arc<Storage>`, shared with `Abf`) that wraps the `Mmap` (an `Owned` variant is planned for issue 14's `Abf::from_bytes`). This drops `Abf::from_file`'s peak allocation from ~1.5-1.6x the file size to a small, file-size-independent amount (both fixtures now open in under 64 KiB — see `tests/memory.rs`) and makes `open` itself ~150-1400x faster, at the cost of slower per-sweep reads (straight-line reads of interleaved mmap bytes instead of a contiguous pre-deinterleaved copy); see `BENCHMARKS.md` for full before/after numbers and the reasoning for accepting that regression. **Breaking:** `Channel::new` and `Abf::from_abf_v2` are no longer public (they took/returned internal representations that no longer exist in public form); `Channel::get_raw_sweep`/`get_sweep`/`get_sweep_len` and all other existing public accessors are unchanged.

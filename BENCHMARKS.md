@@ -159,3 +159,25 @@ shows only `memmap2` (and its own `libc` dependency) as normal dependencies.
 
 All deltas are within normal run-to-run noise, as expected since `ByteReader`
 never sat on the per-sample decode path.
+
+## Before / after [10] (idiomatic, minimal public API)
+
+[10] only renames public methods and changes some parameter/return types
+(`u32` → `usize`, `String`/`"nan"` → `Option<&str>`) via thin wrappers; no
+decode logic changed. `cargo bench --bench read -- --quick` before (old API,
+via `git stash`) vs. after (new API), same machine, back-to-back:
+
+| Benchmark | Fixture | Change |
+| --- | --- | --- |
+| `open` | `14o08011_ic_pair.abf` | -6.5% (noise; single-digit-µs benchmark) |
+| `open` | `18425108.abf` | +0.8% (noise) |
+| `read_all_sweeps_f32` | `14o08011_ic_pair.abf` | -0.2% (noise) |
+| `read_all_sweeps_f32` | `18425108.abf` | +0.1% (noise) |
+| `read_all_sweeps_raw` | `14o08011_ic_pair.abf` | +0.2% (noise) |
+| `read_all_sweeps_raw` | `18425108.abf` | +0.4% (noise) |
+| `read_all_sweeps_into` | `14o08011_ic_pair.abf` | -0.1% (noise) |
+| `read_all_sweeps_into` | `18425108.abf` | -0.03% (noise) |
+
+Criterion reported "No change in performance detected" (p > 0.05) for every
+benchmark. `cargo llvm-cov --fail-under-lines 80` reports 96.31% total line
+coverage after this change.

@@ -70,8 +70,8 @@ fn read_sweep_into_does_not_allocate_after_the_buffer_is_reused() {
         let path = Path::new(fixture);
         let abf = Abf::from_file(path).unwrap();
 
-        for channel in abf.get_channels() {
-            let mut buf = vec![0.0f32; channel.get_sweep_len()];
+        for channel in abf.channels() {
+            let mut buf = vec![0.0f32; channel.sweep_len()];
             // `peak_bytes_during` reports an absolute high-water mark, which
             // starts at whatever is already allocated (here, `buf` itself).
             // Capture that starting point with a no-op call, so the
@@ -79,8 +79,8 @@ fn read_sweep_into_does_not_allocate_after_the_buffer_is_reused() {
             // *beyond* the reused buffer, rather than nothing at all.
             let (_, baseline) = peak_bytes_during(&ALLOCATOR, || {});
             let (_, peak_bytes) = peak_bytes_during(&ALLOCATOR, || {
-                for sweep in 0..abf.get_sweeps_count() {
-                    channel.read_sweep_into(sweep as usize, &mut buf).unwrap();
+                for sweep in 0..abf.sweep_count() {
+                    channel.read_sweep_into(sweep, &mut buf).unwrap();
                 }
             });
             assert_eq!(
@@ -101,8 +101,7 @@ fn prints_peak_bytes_per_fixture() {
             peak_bytes_during(&ALLOCATOR, || Abf::from_file(path).unwrap());
         println!("{fixture}: from_file peak bytes = {open_peak_bytes}");
 
-        let (_, sweep_peak_bytes) =
-            peak_bytes_during(&ALLOCATOR, || abf.get_sweep_in_channel(0, 0).unwrap());
+        let (_, sweep_peak_bytes) = peak_bytes_during(&ALLOCATOR, || abf.sweep(0, 0).unwrap());
         println!("{fixture}: read one sweep peak bytes = {sweep_peak_bytes}");
     }
 }

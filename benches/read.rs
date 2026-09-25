@@ -25,8 +25,8 @@ fn bench_read_all_sweeps_f32(c: &mut Criterion) {
         let abf = Abf::from_file(Path::new(fixture)).unwrap();
         group.bench_function(*fixture, |b| {
             b.iter(|| {
-                for channel in abf.get_channels() {
-                    for sweep in channel.get_sweeps() {
+                for channel in abf.channels() {
+                    for sweep in channel.sweeps() {
                         black_box(sweep.unwrap());
                     }
                 }
@@ -42,9 +42,9 @@ fn bench_read_all_sweeps_raw(c: &mut Criterion) {
         let abf = Abf::from_file(Path::new(fixture)).unwrap();
         group.bench_function(*fixture, |b| {
             b.iter(|| {
-                for channel in abf.get_channels() {
-                    for sweep in 0..abf.get_sweeps_count() {
-                        black_box(channel.get_raw_sweep(sweep).unwrap());
+                for channel in abf.channels() {
+                    for sweep in 0..abf.sweep_count() {
+                        black_box(channel.raw_sweep(sweep).unwrap());
                     }
                 }
             });
@@ -59,10 +59,10 @@ fn bench_read_all_sweeps_into(c: &mut Criterion) {
         let abf = Abf::from_file(Path::new(fixture)).unwrap();
         group.bench_function(*fixture, |b| {
             b.iter(|| {
-                for channel in abf.get_channels() {
-                    let mut buf = vec![0.0f32; channel.get_sweep_len()];
-                    for sweep in 0..abf.get_sweeps_count() {
-                        channel.read_sweep_into(sweep as usize, &mut buf).unwrap();
+                for channel in abf.channels() {
+                    let mut buf = vec![0.0f32; channel.sweep_len()];
+                    for sweep in 0..abf.sweep_count() {
+                        channel.read_sweep_into(sweep, &mut buf).unwrap();
                         black_box(&buf);
                     }
                 }

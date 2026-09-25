@@ -80,28 +80,27 @@ fn check_against_golden(abf_path: &str, golden_stem: &str) {
     let abf = Abf::from_file(Path::new(abf_path)).unwrap();
     let golden = load_golden(golden_stem);
 
-    assert!(matches!(abf.get_file_signature(), AbfKind::AbfV2));
+    assert!(matches!(abf.kind(), AbfKind::AbfV2));
     assert_eq!(golden.abf_version.major, 2);
-    assert_eq!(abf.get_channels_count(), golden.channel_count);
-    assert_eq!(abf.get_sweeps_count(), golden.sweep_count);
+    assert_eq!(abf.channel_count() as u32, golden.channel_count);
+    assert_eq!(abf.sweep_count() as u32, golden.sweep_count);
     assert!(
-        approx_eq(abf.get_sampling_rate(), golden.data_rate),
+        approx_eq(abf.sampling_rate(), golden.data_rate),
         "sampling_rate: got {}, expected {}",
-        abf.get_sampling_rate(),
+        abf.sampling_rate(),
         golden.data_rate
     );
 
     for (ch_idx, golden_channel) in golden.channels.iter().enumerate() {
-        let ch_idx = ch_idx as u32;
         let channel = abf
-            .get_channel(ch_idx)
+            .channel(ch_idx)
             .unwrap_or_else(|| panic!("missing channel {ch_idx}"));
-        assert_eq!(channel.get_label(), golden_channel.adc_name);
-        assert_eq!(channel.get_uom(), golden_channel.adc_unit);
+        assert_eq!(channel.label(), Some(golden_channel.adc_name.as_str()));
+        assert_eq!(channel.uom(), Some(golden_channel.adc_unit.as_str()));
 
         for golden_sweep in &golden_channel.sweeps {
             let sweep_y = abf
-                .get_sweep_in_channel(golden_sweep.sweep, ch_idx)
+                .sweep(ch_idx, golden_sweep.sweep as usize)
                 .unwrap_or_else(|| {
                     panic!("missing sweep {} in channel {ch_idx}", golden_sweep.sweep)
                 });
@@ -174,7 +173,7 @@ fn golden_abf1_05210017() {
 fn golden_time_axis_matches_pyabf_for_multi_sweep_file() {
     let abf = Abf::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
     let golden = load_golden("14o08011_ic_pair");
-    let time_axis = abf.get_time_axis();
+    let time_axis = abf.time_axis();
     assert_eq!(time_axis.len(), golden.sweep_point_count);
 
     let expected_first32 = &golden.channels[0].sweeps[0].sweep_x.first32;
@@ -191,11 +190,11 @@ fn golden_time_axis_matches_pyabf_for_multi_sweep_file() {
 fn golden_get_channels_preserves_adc_order() {
     let abf = Abf::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
     let golden = load_golden("14o08011_ic_pair");
-    let labels: Vec<&str> = abf.get_channels().map(|c| c.get_label()).collect();
-    let expected: Vec<&str> = golden
+    let labels: Vec<Option<&str>> = abf.channels().map(|c| c.label()).collect();
+    let expected: Vec<Option<&str>> = golden
         .channels
         .iter()
-        .map(|c| c.adc_name.as_str())
+        .map(|c| Some(c.adc_name.as_str()))
         .collect();
     assert_eq!(labels, expected);
 }
