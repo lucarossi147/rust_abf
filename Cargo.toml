@@ -11,7 +11,6 @@ description = "Rust crate for reading data from Axon Binary Format (ABF) files."
 [dependencies]
 memmap2 = "0.9.5"
 byteorder = "1.5.0"
-rayon = "1.10.0"
 
 [dev-dependencies]
 criterion = "0.5.1"

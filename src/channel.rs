@@ -1,6 +1,5 @@
 use crate::error::AbfError;
 use crate::storage::Storage;
-use rayon::prelude::*;
 use std::sync::Arc;
 
 /// The on-disk sample representation of a channel, mirroring ABF2's `nDataFormat`
@@ -140,16 +139,7 @@ impl Channel {
     /// there is no int16 representation to hand back and this always
     /// returns `None` for them.
     pub fn get_raw_sweep(&self, sweep: u32) -> Option<Vec<i16>> {
-        if sweep >= self.sweeps_count || self.file_kind != FileKind::I16 {
-            return None;
-        }
-        let start = self.sweep_len * sweep as usize;
-        Some(
-            (start..start + self.sweep_len)
-                .into_par_iter()
-                .map(|j| self.read_i16(j))
-                .collect(),
-        )
+        Some(self.raw_sweep_iter(sweep as usize)?.collect())
     }
 
     /// Returns the sweep in physical units.
@@ -160,15 +150,79 @@ impl Channel {
         if sweep >= self.sweeps_count {
             return None;
         }
-        let start = self.sweep_len * sweep as usize;
-        let range = start..start + self.sweep_len;
-        Some(match self.file_kind {
-            FileKind::I16 => range
-                .into_par_iter()
-                .map(|j| self.read_i16(j) as f32 * self.gain + self.offset)
-                .collect(),
-            FileKind::F32 => range.into_par_iter().map(|j| self.read_f32(j)).collect(),
-        })
+        let mut out = vec![0.0f32; self.sweep_len];
+        self.read_sweep_into(sweep as usize, &mut out).ok()?;
+        Some(out)
+    }
+
+    /// Decodes a sweep's samples in physical units directly into `out`,
+    /// without allocating.
+    ///
+    /// Int16 data is scaled by `gain`/`offset`; float32 data is written as
+    /// stored (see [`Channel::get_sweep`]). `out`'s length must equal
+    /// [`Channel::get_sweep_len`], and `sweep` must be a valid sweep index
+    /// for this channel, otherwise this returns `Err` without modifying
+    /// `out`.
+    pub fn read_sweep_into(&self, sweep: usize, out: &mut [f32]) -> Result<(), AbfError> {
+        if sweep >= self.sweeps_count as usize {
+            return Err(AbfError::SweepOutOfRange {
+                sweep,
+                sweeps_count: self.sweeps_count as usize,
+            });
+        }
+        if out.len() != self.sweep_len {
+            return Err(AbfError::BufferLengthMismatch {
+                expected: self.sweep_len,
+                actual: out.len(),
+            });
+        }
+        let start = self.sweep_len * sweep;
+        match self.file_kind {
+            FileKind::I16 => {
+                for (j, o) in out.iter_mut().enumerate() {
+                    *o = self.read_i16(start + j) as f32 * self.gain + self.offset;
+                }
+            }
+            FileKind::F32 => {
+                for (j, o) in out.iter_mut().enumerate() {
+                    *o = self.read_f32(start + j);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns a lazy, scaled iterator over a sweep's samples in physical
+    /// units, or `None` if `sweep` is out of range.
+    ///
+    /// Each sample is decoded on demand as the iterator is advanced, so
+    /// consuming it (e.g. via `for`, `.sum()`, or `.zip(..)`) does not
+    /// allocate. See [`Channel::get_sweep`] for the scaling rules.
+    pub fn sweep_iter(&self, sweep: usize) -> Option<impl ExactSizeIterator<Item = f32> + '_> {
+        if sweep >= self.sweeps_count as usize {
+            return None;
+        }
+        let start = self.sweep_len * sweep;
+        Some(
+            (start..start + self.sweep_len).map(move |j| match self.file_kind {
+                FileKind::I16 => self.read_i16(j) as f32 * self.gain + self.offset,
+                FileKind::F32 => self.read_f32(j),
+            }),
+        )
+    }
+
+    /// Returns a lazy iterator over a sweep's raw, unscaled int16 samples,
+    /// or `None` if `sweep` is out of range or the channel is float32 (see
+    /// [`Channel::get_raw_sweep`]).
+    ///
+    /// Each sample is decoded on demand as the iterator is advanced, so
+    /// consuming it does not allocate.
+    pub fn raw_sweep_iter(&self, sweep: usize) -> Option<impl ExactSizeIterator<Item = i16> + '_> {
+        if sweep >= self.sweeps_count as usize || self.file_kind != FileKind::I16 {
+            return None;
+        }
+        let start = self.sweep_len * sweep;
+        Some((start..start + self.sweep_len).map(move |j| self.read_i16(j)))
     }
 
     pub fn get_sweeps(&self) -> impl Iterator<Item = Option<Vec<f32>>> + '_ {

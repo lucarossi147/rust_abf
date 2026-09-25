@@ -72,14 +72,20 @@ fn read_sweep_into_does_not_allocate_after_the_buffer_is_reused() {
 
         for channel in abf.get_channels() {
             let mut buf = vec![0.0f32; channel.get_sweep_len()];
+            // `peak_bytes_during` reports an absolute high-water mark, which
+            // starts at whatever is already allocated (here, `buf` itself).
+            // Capture that starting point with a no-op call, so the
+            // assertion below checks that the read loop allocates nothing
+            // *beyond* the reused buffer, rather than nothing at all.
+            let (_, baseline) = peak_bytes_during(&ALLOCATOR, || {});
             let (_, peak_bytes) = peak_bytes_during(&ALLOCATOR, || {
                 for sweep in 0..abf.get_sweeps_count() {
                     channel.read_sweep_into(sweep as usize, &mut buf).unwrap();
                 }
             });
             assert_eq!(
-                peak_bytes, 0,
-                "{fixture}: read_sweep_into peak bytes = {peak_bytes}, expected 0"
+                peak_bytes, baseline,
+                "{fixture}: read_sweep_into peak bytes = {peak_bytes}, expected no more than the {baseline}-byte baseline"
             );
         }
     }

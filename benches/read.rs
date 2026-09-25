@@ -53,10 +53,30 @@ fn bench_read_all_sweeps_raw(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_read_all_sweeps_into(c: &mut Criterion) {
+    let mut group = c.benchmark_group("read_all_sweeps_into");
+    for fixture in FIXTURES {
+        let abf = Abf::from_file(Path::new(fixture)).unwrap();
+        group.bench_function(*fixture, |b| {
+            b.iter(|| {
+                for channel in abf.get_channels() {
+                    let mut buf = vec![0.0f32; channel.get_sweep_len()];
+                    for sweep in 0..abf.get_sweeps_count() {
+                        channel.read_sweep_into(sweep as usize, &mut buf).unwrap();
+                        black_box(&buf);
+                    }
+                }
+            });
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_open,
     bench_read_all_sweeps_f32,
-    bench_read_all_sweeps_raw
+    bench_read_all_sweeps_raw,
+    bench_read_all_sweeps_into
 );
 criterion_main!(benches);
