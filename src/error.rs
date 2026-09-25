@@ -104,6 +104,22 @@ mod tests {
             AbfError::Unsupported("variable-length event-driven sweeps".to_string()).to_string(),
             "unsupported: variable-length event-driven sweeps"
         );
+        assert_eq!(
+            AbfError::SweepOutOfRange {
+                sweep: 5,
+                sweeps_count: 3
+            }
+            .to_string(),
+            "sweep index 5 out of range: channel has 3 sweep(s)"
+        );
+        assert_eq!(
+            AbfError::BufferLengthMismatch {
+                expected: 10,
+                actual: 4
+            }
+            .to_string(),
+            "output buffer length 4 does not match sweep length 10"
+        );
     }
 
     #[test]

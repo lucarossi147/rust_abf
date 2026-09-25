@@ -1,3 +1,4 @@
+use crate::error::AbfError;
 use crate::storage::Storage;
 use rayon::prelude::*;
 use std::sync::Arc;
@@ -316,6 +317,101 @@ mod tests {
         ch.offset = 1.0;
         assert_eq!(ch.get_sweep(0).unwrap(), vec![3.0, 5.0]);
         assert_eq!(ch.get_sweep(1).unwrap(), vec![7.0, 9.0]);
+    }
+
+    #[test]
+    fn read_sweep_into_returns_err_on_sweep_out_of_range() {
+        let ch = make_channel(vec![0, 1, 2, 3, 4, 5], 3);
+        let mut out = [0.0f32; 2];
+        assert!(matches!(
+            ch.read_sweep_into(3, &mut out),
+            Err(AbfError::SweepOutOfRange {
+                sweep: 3,
+                sweeps_count: 3
+            })
+        ));
+    }
+
+    #[test]
+    fn read_sweep_into_returns_err_on_wrong_buffer_length() {
+        let ch = make_channel(vec![0, 1, 2, 3, 4, 5], 3);
+        let mut too_short = [0.0f32; 1];
+        assert!(matches!(
+            ch.read_sweep_into(0, &mut too_short),
+            Err(AbfError::BufferLengthMismatch {
+                expected: 2,
+                actual: 1
+            })
+        ));
+        let mut too_long = [0.0f32; 3];
+        assert!(matches!(
+            ch.read_sweep_into(0, &mut too_long),
+            Err(AbfError::BufferLengthMismatch {
+                expected: 2,
+                actual: 3
+            })
+        ));
+    }
+
+    #[test]
+    fn read_sweep_into_fills_buffer_with_scaled_i16_values() {
+        let mut ch = make_channel(vec![1, 2, 3, 4], 2);
+        ch.gain = 2.0;
+        ch.offset = 1.0;
+        let mut out = [0.0f32; 2];
+        ch.read_sweep_into(0, &mut out).unwrap();
+        assert_eq!(out, [3.0, 5.0]);
+        ch.read_sweep_into(1, &mut out).unwrap();
+        assert_eq!(out, [7.0, 9.0]);
+    }
+
+    #[test]
+    fn read_sweep_into_fills_buffer_with_unscaled_f32_values() {
+        let mut ch = make_f32_channel(vec![1.5, -2.25, 3.0, 4.0], 2);
+        ch.gain = 2.0;
+        ch.offset = 100.0;
+        let mut out = [0.0f32; 2];
+        ch.read_sweep_into(0, &mut out).unwrap();
+        assert_eq!(out, [1.5, -2.25]);
+        ch.read_sweep_into(1, &mut out).unwrap();
+        assert_eq!(out, [3.0, 4.0]);
+    }
+
+    #[test]
+    fn sweep_iter_returns_none_out_of_range() {
+        let ch = make_channel(vec![0, 1, 2, 3, 4, 5], 3);
+        assert!(ch.sweep_iter(3).is_none());
+        assert!(ch.sweep_iter(usize::MAX).is_none());
+    }
+
+    #[test]
+    fn sweep_iter_yields_scaled_values_and_reports_exact_len() {
+        let mut ch = make_channel(vec![1, 2, 3, 4], 2);
+        ch.gain = 2.0;
+        ch.offset = 1.0;
+        let iter = ch.sweep_iter(1).unwrap();
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.collect::<Vec<_>>(), vec![7.0, 9.0]);
+    }
+
+    #[test]
+    fn raw_sweep_iter_returns_none_for_f32_channel() {
+        let ch = make_f32_channel(vec![1.5, -2.25], 1);
+        assert!(ch.raw_sweep_iter(0).is_none());
+    }
+
+    #[test]
+    fn raw_sweep_iter_returns_none_out_of_range() {
+        let ch = make_channel(vec![0, 1, 2, 3, 4, 5], 3);
+        assert!(ch.raw_sweep_iter(3).is_none());
+    }
+
+    #[test]
+    fn raw_sweep_iter_yields_raw_values_and_reports_exact_len() {
+        let ch = make_channel(vec![0, 1, 2, 3, 4, 5], 3);
+        let iter = ch.raw_sweep_iter(2).unwrap();
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.collect::<Vec<_>>(), vec![4, 5]);
     }
 
     #[test]

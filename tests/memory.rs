@@ -60,6 +60,31 @@ fn opening_a_file_does_not_copy_sample_data_onto_the_heap() {
     }
 }
 
+/// Issue [8]: `Channel::read_sweep_into` decodes into a caller-supplied
+/// buffer, so reading every sweep of every channel with one reused buffer
+/// should not allocate at all after the buffer itself is allocated.
+#[test]
+fn read_sweep_into_does_not_allocate_after_the_buffer_is_reused() {
+    let _guard = lock_measurements();
+    for fixture in FIXTURES {
+        let path = Path::new(fixture);
+        let abf = Abf::from_file(path).unwrap();
+
+        for channel in abf.get_channels() {
+            let mut buf = vec![0.0f32; channel.get_sweep_len()];
+            let (_, peak_bytes) = peak_bytes_during(&ALLOCATOR, || {
+                for sweep in 0..abf.get_sweeps_count() {
+                    channel.read_sweep_into(sweep as usize, &mut buf).unwrap();
+                }
+            });
+            assert_eq!(
+                peak_bytes, 0,
+                "{fixture}: read_sweep_into peak bytes = {peak_bytes}, expected 0"
+            );
+        }
+    }
+}
+
 #[test]
 fn prints_peak_bytes_per_fixture() {
     let _guard = lock_measurements();
