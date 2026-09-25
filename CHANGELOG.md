@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Working docs and doc-tested README (issue [11]): `Channel` and `FileKind` are now
+  re-exported from the crate root (`pub use channel::{Channel, FileKind};` in `src/lib.rs`)
+  so they actually appear in `cargo doc` output and can be named by callers — previously
+  `channel` was a private module with no public re-export, so neither type had a rustdoc
+  page even though `Abf::channel`/`Channel::file_kind` returned them. `src/lib.rs` now uses
+  `#![doc = include_str!("../README.md")]` (replacing the old `// !` plain comments, which
+  docs.rs rendered as an empty crate page) so the README's examples are run as doctests, and
+  `#![warn(missing_docs)]` is on, with every public item documented (including an `# Errors`
+  section on `Abf::from_file`/`Channel::read_sweep_into` and at least one example per main
+  type: `Abf`, `Channel`, `AbfKind`, `FileKind`, `AbfError`). Rewrote the README (its old
+  example didn't compile: `.unwrap()` immediately followed by `match Ok(..)` on the
+  now-unwrapped value) with compiling examples, and added sections on the lazy-mmap memory
+  model and the float32-vs-int16 scaling behavior. Added `examples/summary.rs`
+  (`cargo run --example summary <path>`), printing a file's channels, units, sweeps and
+  sampling rate.
 - **Breaking:** Idiomatic, minimal public API cleanup (issue [10] / #15):
   - `pub mod abf_v2` is now a private module: it was only reachable because of the `pub`, but every item nested under it was already declared with default (crate-private) visibility, so nothing in it was actually part of the public API before this change either — this just makes that explicit. `Abf::from_abf_v2` and `Channel::new` were already `pub(crate)`.
   - Counts and indices are now `usize` instead of `u32`, and every getter drops its `get_` prefix. Renamed (old name deprecated with `#[deprecated(since = "0.5.0", ...)]`, one dedicated test per alias in `tests/deprecated_api.rs`):

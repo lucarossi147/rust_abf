@@ -1,36 +1,7 @@
-// ! # Abf Crate
-// !
-// ! This crate defines the `Abf` struct, representing data from Axon Binary Format (ABF) files.
-// ! ABF files are typically used in electrophysiological recordings.
-// !
-// ! ## Example Usage
-// !
-// ! ```rust,no_run
-// ! use rust_abf::Abf;
-// ! use std::path::Path;
-// !
-// ! // Create an Abf instance
-// ! let abf = Abf::from_file(Path::new("recording.abf")).unwrap();
-// !
-// ! // Access information about the ABF file
-// ! println!("File Signature: {:?}", abf.kind());
-// ! println!("Channels Count: {}", abf.channel_count());
-// ! println!("Sweeps Count: {}", abf.sweep_count());
-// !
-// ! // Access data from the ABF file
-// ! for channel in abf.channels() {
-// !     for sweep in channel.sweeps() {
-// !         assert_eq!(sweep.unwrap().len(), 250_000);
-// !     }
-// ! }
-// ! let channel_data = abf.sweep(0, 0);
-// ! if let Some(data) = channel_data {
-// !     println!("Channel 0, Sweep 0 data: {:?}", data);
-// ! }
-// ! ```
+#![doc = include_str!("../README.md")]
+#![warn(missing_docs)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
-use channel::Channel;
 use memmap2::Mmap;
 use std::{
     fmt,
@@ -47,16 +18,49 @@ pub use error::AbfError;
 mod abf_v1;
 mod abf_v2;
 mod channel;
+pub use channel::{Channel, FileKind};
 mod storage;
 
 /// Which ABF format version a file was parsed as.
+///
+/// # Examples
+///
+/// ```
+/// use rust_abf::{Abf, AbfKind};
+/// use std::path::Path;
+///
+/// let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
+/// assert!(matches!(abf.kind(), AbfKind::AbfV2));
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub enum AbfKind {
+    /// A legacy ABF1 file. `Abf::from_file` does not currently parse ABF1
+    /// files (it returns `Err(AbfError::UnsupportedVersion(_))` for them
+    /// instead), so this variant cannot currently be observed; it exists for
+    /// forward compatibility with future ABF1 support.
     AbfV1,
+    /// An ABF2 file, the only format `Abf::from_file` currently parses.
     AbfV2,
 }
 
-/// The `Abf` struct represents data from an ABF file.
+/// Parsed data and metadata from an Axon Binary Format (ABF) file.
+///
+/// An `Abf` is obtained by calling [`Abf::from_file`], and exposes the file's
+/// channels either through [`Abf::channel`]/[`Abf::channels`] (which return
+/// [`Channel`] values with their own accessors) or directly through
+/// [`Abf::sweep`], which takes a channel and sweep index.
+///
+/// # Examples
+///
+/// ```
+/// use rust_abf::Abf;
+/// use std::path::Path;
+///
+/// let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
+/// assert_eq!(abf.channel_count(), 2);
+/// assert_eq!(abf.sweep_count(), 1);
+/// assert_eq!(abf.sampling_rate(), 25_000.0);
+/// ```
 pub struct Abf {
     abf_kind: AbfKind,
     channels_count: usize,
@@ -91,6 +95,19 @@ impl Abf {
     /// data is decoded lazily as sweeps are requested instead of being
     /// copied onto the heap at open time.
     ///
+    /// # Errors
+    ///
+    /// Returns `Err` instead of panicking on any malformed or truncated
+    /// input, in particular:
+    /// - [`AbfError::Io`] if the file cannot be opened or memory-mapped.
+    /// - [`AbfError::InvalidSignature`] if the first 4 bytes are not a
+    ///   recognized ABF signature.
+    /// - [`AbfError::UnsupportedVersion`] if the file is a legacy ABF1 file.
+    /// - [`AbfError::Truncated`] or [`AbfError::InvalidSection`] if a header
+    ///   section is missing data or internally inconsistent.
+    /// - [`AbfError::Unsupported`] if the file uses a recognized but
+    ///   not-yet-supported feature (e.g. non-uniform event-driven sweeps).
+    ///
     /// # Caveats
     ///
     /// Because the file is memory-mapped, modifying or truncating it on disk
@@ -99,6 +116,16 @@ impl Abf {
     /// with the external write, with no synchronization between the two.
     /// Callers must not write to a file while an `Abf` opened from it is in
     /// use.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rust_abf::Abf;
+    /// use std::path::Path;
+    ///
+    /// let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
+    /// assert_eq!(abf.channel_count(), 2);
+    /// ```
     pub fn from_file(filepath: &Path) -> Result<Abf, AbfError> {
         let path = PathBuf::from(filepath);
         let file = File::open(&path)?;
@@ -127,26 +154,31 @@ impl Abf {
             .collect()
     }
 
+    /// Deprecated alias for [`Abf::time_axis`].
     #[deprecated(since = "0.5.0", note = "use `Abf::time_axis` instead")]
     pub fn get_time_axis(&self) -> Vec<f32> {
         self.time_axis()
     }
 
+    /// The number of channels recorded in this file.
     #[must_use]
     pub fn channel_count(&self) -> usize {
         self.channels_count
     }
 
+    /// Deprecated alias for [`Abf::channel_count`].
     #[deprecated(since = "0.5.0", note = "use `Abf::channel_count` instead")]
     pub fn get_channels_count(&self) -> u32 {
         self.channel_count() as u32
     }
 
+    /// The number of sweeps recorded per channel.
     #[must_use]
     pub fn sweep_count(&self) -> usize {
         self.sweeps_count
     }
 
+    /// Deprecated alias for [`Abf::sweep_count`].
     #[deprecated(since = "0.5.0", note = "use `Abf::sweep_count` instead")]
     pub fn get_sweeps_count(&self) -> u32 {
         self.sweep_count() as u32
@@ -161,60 +193,74 @@ impl Abf {
         self.channels.get(channel)?.sweep(sweep)
     }
 
+    /// Deprecated alias for [`Abf::sweep`], with the arguments swapped
+    /// (`(sweep, channel)` instead of `(channel, sweep)`).
     #[deprecated(since = "0.5.0", note = "use `Abf::sweep` instead")]
     pub fn get_sweep_in_channel(&self, sweep: u32, channel: u32) -> Option<Vec<f32>> {
         self.sweep(channel as usize, sweep as usize)
     }
 
+    /// Which ABF format version this file was parsed as.
     #[must_use]
     pub fn kind(&self) -> AbfKind {
         self.abf_kind
     }
 
+    /// Deprecated alias for [`Abf::kind`].
     #[deprecated(since = "0.5.0", note = "use `Abf::kind` instead")]
     pub fn get_file_signature(&self) -> AbfKind {
         self.kind()
     }
 
+    /// Returns the channel at `index`, or `None` if `index >= channel_count()`.
     #[must_use]
     pub fn channel(&self, index: usize) -> Option<&Channel> {
         self.channels.get(index)
     }
 
+    /// Deprecated alias for [`Abf::channel`].
     #[deprecated(since = "0.5.0", note = "use `Abf::channel` instead")]
     pub fn get_channel(&self, index: u32) -> Option<&Channel> {
         self.channel(index as usize)
     }
 
+    /// Returns an iterator over every channel, in recording order.
     pub fn channels(&self) -> impl Iterator<Item = &Channel> {
         self.channels.iter()
     }
 
+    /// Deprecated alias for [`Abf::channels`].
     #[deprecated(since = "0.5.0", note = "use `Abf::channels` instead")]
     pub fn get_channels(&self) -> impl Iterator<Item = &Channel> {
         self.channels()
     }
 
+    /// The sampling rate, in Hz, shared by every channel in this file.
     #[must_use]
     pub fn sampling_rate(&self) -> f32 {
         self.sampling_rate
     }
 
+    /// Deprecated alias for [`Abf::sampling_rate`].
     #[deprecated(since = "0.5.0", note = "use `Abf::sampling_rate` instead")]
     pub fn get_sampling_rate(&self) -> f32 {
         self.sampling_rate()
     }
 
+    /// The filesystem path this `Abf` was opened from.
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
     }
 
+    /// Deprecated alias for [`Abf::path`].
     #[deprecated(since = "0.5.0", note = "use `Abf::path` instead")]
     pub fn get_path(&self) -> &Path {
         self.path()
     }
 
+    /// The duration, in seconds, of one sweep, or `None` if there are no
+    /// channels.
     #[must_use]
     pub fn time_duration(&self) -> Option<f32> {
         let data_sec_per_point = 1.0 / self.sampling_rate;
@@ -222,6 +268,7 @@ impl Abf {
             .map(|ch| ch.sweep_len() as f32 * data_sec_per_point)
     }
 
+    /// Deprecated alias for [`Abf::time_duration`].
     #[deprecated(since = "0.5.0", note = "use `Abf::time_duration` instead")]
     pub fn get_time_duration(&self) -> Option<f32> {
         self.time_duration()

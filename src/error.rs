@@ -5,6 +5,17 @@ use std::io;
 ///
 /// Every variant is produced by validated, bounds-checked parsing: malformed
 /// or truncated input always yields one of these instead of panicking.
+///
+/// # Examples
+///
+/// ```
+/// use rust_abf::{Abf, AbfError};
+/// use std::path::Path;
+///
+/// let err = Abf::from_file(Path::new("tests/test_abf/wrong_signature.abf")).unwrap_err();
+/// assert!(matches!(err, AbfError::InvalidSignature));
+/// println!("{err}"); // implements `Display` and `std::error::Error`
+/// ```
 #[derive(Debug)]
 pub enum AbfError {
     /// Failed to open or read the file.
@@ -15,23 +26,37 @@ pub enum AbfError {
     UnsupportedVersion(String),
     /// A read ran past the end of the file.
     Truncated {
+        /// Name of the section being read when the read ran out of bytes.
         section: &'static str,
+        /// Byte offset the read started at.
         offset: usize,
     },
     /// A section's header fields are internally inconsistent (e.g. an
     /// offset/count that overflows or an unexpected sample width).
     InvalidSection {
+        /// Name of the section with the inconsistent header fields.
         section: &'static str,
+        /// Human-readable description of what was inconsistent.
         reason: String,
     },
     /// The file uses a recognized but not-yet-supported feature.
     Unsupported(String),
     /// `Channel::read_sweep_into` was called with a sweep index that is out
     /// of range for the channel's sweep count.
-    SweepOutOfRange { sweep: usize, sweeps_count: usize },
+    SweepOutOfRange {
+        /// The out-of-range sweep index that was requested.
+        sweep: usize,
+        /// The channel's actual sweep count.
+        sweeps_count: usize,
+    },
     /// `Channel::read_sweep_into`'s output buffer length didn't match the
     /// channel's sweep length.
-    BufferLengthMismatch { expected: usize, actual: usize },
+    BufferLengthMismatch {
+        /// The channel's sweep length, i.e. the buffer length that was expected.
+        expected: usize,
+        /// The output buffer's actual length.
+        actual: usize,
+    },
 }
 
 impl fmt::Display for AbfError {

@@ -5,9 +5,26 @@ use std::sync::Arc;
 
 /// The on-disk sample representation of a channel, mirroring ABF2's `nDataFormat`
 /// header field (`0` => int16, anything else => float32).
+///
+/// # Examples
+///
+/// ```
+/// use rust_abf::{Abf, FileKind};
+/// use std::path::Path;
+///
+/// let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
+/// let channel = abf.channel(0).unwrap();
+/// match channel.file_kind() {
+///     FileKind::I16 => assert!(channel.raw_sweep(0).is_some()),
+///     FileKind::F32 => assert!(channel.raw_sweep(0).is_none()),
+/// }
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileKind {
+    /// Samples are stored as `i16`, scaled by `gain`/`offset` to produce
+    /// physical units (see [`Channel::sweep`]).
     I16,
+    /// Samples are stored as `f32`, already in physical units.
     F32,
 }
 
@@ -37,8 +54,22 @@ pub(crate) struct ChannelLayout {
 /// A single channel's metadata plus a lazy view into its samples.
 ///
 /// No sample data is copied at construction time: every sweep is decoded
-/// on demand, straight out of the shared [`Storage`], when
-/// [`Channel::sweep`] or [`Channel::raw_sweep`] is called.
+/// on demand, straight out of the shared `Storage`, when
+/// [`Channel::sweep`] or [`Channel::raw_sweep`] is called. A `Channel` is
+/// obtained from an [`crate::Abf`] via [`crate::Abf::channel`] or
+/// [`crate::Abf::channels`].
+///
+/// # Examples
+///
+/// ```
+/// use rust_abf::Abf;
+/// use std::path::Path;
+///
+/// let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
+/// let channel = abf.channel(0).unwrap();
+/// let sweep = channel.sweep(0).unwrap();
+/// assert_eq!(sweep.len(), channel.sweep_len());
+/// ```
 pub struct Channel {
     storage: Arc<Storage>,
     data_offset: usize,
@@ -108,6 +139,8 @@ impl Channel {
         self.uom.as_deref()
     }
 
+    /// Deprecated alias for [`Channel::uom`], falling back to `"nan"`
+    /// instead of `None` when there is no unit of measurement.
     #[deprecated(since = "0.5.0", note = "use `Channel::uom` instead")]
     pub fn get_uom(&self) -> &str {
         self.uom().unwrap_or("nan")
@@ -120,36 +153,48 @@ impl Channel {
         self.label.as_deref()
     }
 
+    /// Deprecated alias for [`Channel::label`], falling back to `"nan"`
+    /// instead of `None` when there is no label.
     #[deprecated(since = "0.5.0", note = "use `Channel::label` instead")]
     pub fn get_label(&self) -> &str {
         self.label().unwrap_or("nan")
     }
 
+    /// The multiplier applied to raw [`FileKind::I16`] samples to produce
+    /// physical units (see [`Channel::sweep`]). Unused for [`FileKind::F32`]
+    /// channels.
     #[must_use]
     pub fn gain(&self) -> f32 {
         self.gain
     }
 
+    /// Deprecated alias for [`Channel::gain`].
     #[deprecated(since = "0.5.0", note = "use `Channel::gain` instead")]
     pub fn get_gain(&self) -> f32 {
         self.gain()
     }
 
+    /// The value added to raw [`FileKind::I16`] samples, after scaling by
+    /// [`Channel::gain`], to produce physical units. Unused for
+    /// [`FileKind::F32`] channels.
     #[must_use]
     pub fn offset(&self) -> f32 {
         self.offset
     }
 
+    /// Deprecated alias for [`Channel::offset`].
     #[deprecated(since = "0.5.0", note = "use `Channel::offset` instead")]
     pub fn get_offset(&self) -> f32 {
         self.offset()
     }
 
+    /// The on-disk sample representation of this channel.
     #[must_use]
     pub fn file_kind(&self) -> FileKind {
         self.file_kind
     }
 
+    /// Deprecated alias for [`Channel::file_kind`].
     #[deprecated(since = "0.5.0", note = "use `Channel::file_kind` instead")]
     pub fn get_file_kind(&self) -> FileKind {
         self.file_kind()
@@ -201,6 +246,7 @@ impl Channel {
         Some(self.raw_sweep_iter(sweep)?.collect())
     }
 
+    /// Deprecated alias for [`Channel::raw_sweep`].
     #[deprecated(since = "0.5.0", note = "use `Channel::raw_sweep` instead")]
     pub fn get_raw_sweep(&self, sweep: u32) -> Option<Vec<i16>> {
         self.raw_sweep(sweep as usize)
@@ -220,6 +266,7 @@ impl Channel {
         Some(out)
     }
 
+    /// Deprecated alias for [`Channel::sweep`].
     #[deprecated(since = "0.5.0", note = "use `Channel::sweep` instead")]
     pub fn get_sweep(&self, sweep: u32) -> Option<Vec<f32>> {
         self.sweep(sweep as usize)
@@ -229,10 +276,27 @@ impl Channel {
     /// without allocating.
     ///
     /// Int16 data is scaled by `gain`/`offset`; float32 data is written as
-    /// stored (see [`Channel::sweep`]). `out`'s length must equal
-    /// [`Channel::sweep_len`], and `sweep` must be a valid sweep index
-    /// for this channel, otherwise this returns `Err` without modifying
-    /// `out`.
+    /// stored (see [`Channel::sweep`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` without modifying `out` if:
+    /// - [`AbfError::SweepOutOfRange`]: `sweep` is not a valid sweep index
+    ///   for this channel.
+    /// - [`AbfError::BufferLengthMismatch`]: `out`'s length does not equal
+    ///   [`Channel::sweep_len`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rust_abf::Abf;
+    /// use std::path::Path;
+    ///
+    /// let abf = Abf::from_file(Path::new("tests/test_abf/18425108.abf")).unwrap();
+    /// let channel = abf.channel(0).unwrap();
+    /// let mut buffer = vec![0.0f32; channel.sweep_len()];
+    /// channel.read_sweep_into(0, &mut buffer).unwrap();
+    /// ```
     pub fn read_sweep_into(&self, sweep: usize, out: &mut [f32]) -> Result<(), AbfError> {
         if sweep >= self.sweeps_count {
             return Err(AbfError::SweepOutOfRange {
@@ -295,20 +359,27 @@ impl Channel {
         Some((start..start + self.sweep_len).map(move |j| self.read_i16(j)))
     }
 
+    /// Returns an iterator over every sweep in physical units, in order
+    /// (one item per sweep recorded in the file); every item is `Some` in
+    /// practice, since the indices are always in range. See
+    /// [`Channel::sweep`] for the scaling rules.
     pub fn sweeps(&self) -> impl Iterator<Item = Option<Vec<f32>>> + '_ {
         (0..self.sweeps_count).map(|s| self.sweep(s))
     }
 
+    /// Deprecated alias for [`Channel::sweeps`].
     #[deprecated(since = "0.5.0", note = "use `Channel::sweeps` instead")]
     pub fn get_sweeps(&self) -> impl Iterator<Item = Option<Vec<f32>>> + '_ {
         self.sweeps()
     }
 
+    /// The number of samples in one sweep of this channel.
     #[must_use]
     pub fn sweep_len(&self) -> usize {
         self.sweep_len
     }
 
+    /// Deprecated alias for [`Channel::sweep_len`].
     #[deprecated(since = "0.5.0", note = "use `Channel::sweep_len` instead")]
     pub fn get_sweep_len(&self) -> usize {
         self.sweep_len()
