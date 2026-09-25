@@ -52,13 +52,8 @@ impl Abf {
         let adc_resolution = protocol_section.adc_resolution()?;
 
         let indexed_strings = strings_section.read_indexed_strings()?;
-        let sweeps_count = sweep_count(operation_mode, actual_episodes);
-
-        let channels_count =
-            u32::try_from(number_of_channels).map_err(|_| AbfError::InvalidSection {
-                section: "adc",
-                reason: "channel count exceeds u32".to_string(),
-            })?;
+        let sweeps_count = sweep_count(operation_mode, actual_episodes) as usize;
+        let channels_count = number_of_channels;
 
         let channels: Vec<Channel> = match data_layout {
             None => Vec::new(),
@@ -87,16 +82,12 @@ impl Abf {
                             samples_per_channel,
                             file_kind: layout.file_kind,
                         },
-                        indexed_strings
-                            .get(adc_info.adc_units_index)
-                            .cloned()
-                            .unwrap_or_else(|| "nan".to_string()),
+                        indexed_strings.get(adc_info.adc_units_index).cloned(),
                         gain,
                         offset,
                         indexed_strings
                             .get(adc_info.adc_channel_name_index)
-                            .cloned()
-                            .unwrap_or_else(|| "nan".to_string()),
+                            .cloned(),
                         sweeps_count,
                     )
                 })

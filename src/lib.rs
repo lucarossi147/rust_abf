@@ -5,23 +5,25 @@
 // !
 // ! ## Example Usage
 // !
-// ! ```rust
-// ! use abf::{Abf, AbfKind};
+// ! ```rust,no_run
+// ! use rust_abf::Abf;
 // ! use std::path::Path;
+// !
 // ! // Create an Abf instance
-// ! let abf = Abf::from_file(Path::new(filepath)).unwrap();
+// ! let abf = Abf::from_file(Path::new("recording.abf")).unwrap();
 // !
 // ! // Access information about the ABF file
-// ! println!("File Signature: {:?}", abf.get_file_signature());
-// ! println!("Channels Count: {}", abf.get_channels_count());
-// ! println!("Sweeps Count: {}", abf.get_sweeps_count());
+// ! println!("File Signature: {:?}", abf.kind());
+// ! println!("Channels Count: {}", abf.channel_count());
+// ! println!("Sweeps Count: {}", abf.sweep_count());
 // !
 // ! // Access data from the ABF file
-// ! abf.get_channels()
-// ! .map(|c| c.get_sweeps())
-// ! .flatten()
-// ! .for_each(|s| assert_eq!(s.unwrap().len(), 250_000));
-// ! let channel_data = abf.get_sweep_in_channel(0, 0);
+// ! for channel in abf.channels() {
+// !     for sweep in channel.sweeps() {
+// !         assert_eq!(sweep.unwrap().len(), 250_000);
+// !     }
+// ! }
+// ! let channel_data = abf.sweep(0, 0);
 // ! if let Some(data) = channel_data {
 // !     println!("Channel 0, Sweep 0 data: {:?}", data);
 // ! }
@@ -31,6 +33,7 @@
 use channel::Channel;
 use memmap2::Mmap;
 use std::{
+    fmt,
     fs::File,
     path::{Path, PathBuf},
     sync::Arc,
@@ -42,13 +45,11 @@ mod error;
 pub use error::AbfError;
 
 mod abf_v1;
-pub mod abf_v2;
+mod abf_v2;
 mod channel;
 mod storage;
 
-// use abf::abf_v2::AbfV2;
-// TODO this will become an Abf Header
-// TODO the Abf Header will be an enum, of either abf_v1 or abf_v2
+/// Which ABF format version a file was parsed as.
 #[derive(Debug, Clone, Copy)]
 pub enum AbfKind {
     AbfV1,
@@ -58,8 +59,8 @@ pub enum AbfKind {
 /// The `Abf` struct represents data from an ABF file.
 pub struct Abf {
     abf_kind: AbfKind,
-    channels_count: u32,
-    sweeps_count: u32,
+    channels_count: usize,
+    sweeps_count: usize,
     sampling_rate: f32,
     channels: Vec<Channel>,
     path: PathBuf,
@@ -69,6 +70,18 @@ pub struct Abf {
     /// possible.
     #[allow(dead_code)]
     storage: Arc<Storage>,
+}
+
+impl fmt::Debug for Abf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Abf")
+            .field("kind", &self.abf_kind)
+            .field("channel_count", &self.channels_count)
+            .field("sweep_count", &self.sweeps_count)
+            .field("sampling_rate", &self.sampling_rate)
+            .field("path", &self.path)
+            .finish()
+    }
 }
 
 impl Abf {
@@ -101,8 +114,11 @@ impl Abf {
         }
     }
 
-    pub fn get_time_axis(&self) -> Vec<f32> {
-        let Some(sweep_len) = self.channels.first().map(|ch| ch.get_sweep_len()) else {
+    /// Returns one time point (in seconds) per sample of a single sweep,
+    /// computed from the sampling rate; empty if there are no channels.
+    #[must_use]
+    pub fn time_axis(&self) -> Vec<f32> {
+        let Some(sweep_len) = self.channels.first().map(Channel::sweep_len) else {
             return Vec::new();
         };
         let data_sec_per_point = 1.0_f64 / self.sampling_rate as f64;
@@ -111,53 +127,106 @@ impl Abf {
             .collect()
     }
 
-    pub fn get_channels_count(&self) -> u32 {
+    #[deprecated(since = "0.5.0", note = "use `Abf::time_axis` instead")]
+    pub fn get_time_axis(&self) -> Vec<f32> {
+        self.time_axis()
+    }
+
+    #[must_use]
+    pub fn channel_count(&self) -> usize {
         self.channels_count
     }
 
-    pub fn get_sweeps_count(&self) -> u32 {
+    #[deprecated(since = "0.5.0", note = "use `Abf::channel_count` instead")]
+    pub fn get_channels_count(&self) -> u32 {
+        self.channel_count() as u32
+    }
+
+    #[must_use]
+    pub fn sweep_count(&self) -> usize {
         self.sweeps_count
     }
 
-    pub fn get_sweep_in_channel(&self, sweep: u32, channel: u32) -> Option<Vec<f32>> {
+    #[deprecated(since = "0.5.0", note = "use `Abf::sweep_count` instead")]
+    pub fn get_sweeps_count(&self) -> u32 {
+        self.sweep_count() as u32
+    }
+
+    /// Returns channel `channel`'s sweep number `sweep`, in physical units.
+    #[must_use]
+    pub fn sweep(&self, channel: usize, sweep: usize) -> Option<Vec<f32>> {
         if sweep >= self.sweeps_count {
             return None;
         }
-        self.channels.get(channel as usize)?.get_sweep(sweep)
+        self.channels.get(channel)?.sweep(sweep)
     }
 
-    pub fn get_file_signature(&self) -> AbfKind {
+    #[deprecated(since = "0.5.0", note = "use `Abf::sweep` instead")]
+    pub fn get_sweep_in_channel(&self, sweep: u32, channel: u32) -> Option<Vec<f32>> {
+        self.sweep(channel as usize, sweep as usize)
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> AbfKind {
         self.abf_kind
     }
 
-    pub fn get_channel(&self, index: u32) -> Option<&Channel> {
-        self.channels.get(index as usize)
+    #[deprecated(since = "0.5.0", note = "use `Abf::kind` instead")]
+    pub fn get_file_signature(&self) -> AbfKind {
+        self.kind()
     }
 
-    pub fn get_channels(&self) -> impl Iterator<Item = &Channel> {
+    #[must_use]
+    pub fn channel(&self, index: usize) -> Option<&Channel> {
+        self.channels.get(index)
+    }
+
+    #[deprecated(since = "0.5.0", note = "use `Abf::channel` instead")]
+    pub fn get_channel(&self, index: u32) -> Option<&Channel> {
+        self.channel(index as usize)
+    }
+
+    pub fn channels(&self) -> impl Iterator<Item = &Channel> {
         self.channels.iter()
     }
 
-    pub fn get_sampling_rate(&self) -> f32 {
+    #[deprecated(since = "0.5.0", note = "use `Abf::channels` instead")]
+    pub fn get_channels(&self) -> impl Iterator<Item = &Channel> {
+        self.channels()
+    }
+
+    #[must_use]
+    pub fn sampling_rate(&self) -> f32 {
         self.sampling_rate
     }
 
-    pub fn get_path(&self) -> &Path {
+    #[deprecated(since = "0.5.0", note = "use `Abf::sampling_rate` instead")]
+    pub fn get_sampling_rate(&self) -> f32 {
+        self.sampling_rate()
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &Path {
         &self.path
     }
 
-    pub fn get_time_duration(&self) -> Option<f32> {
+    #[deprecated(since = "0.5.0", note = "use `Abf::path` instead")]
+    pub fn get_path(&self) -> &Path {
+        self.path()
+    }
+
+    #[must_use]
+    pub fn time_duration(&self) -> Option<f32> {
         let data_sec_per_point = 1.0 / self.sampling_rate;
-        self.get_channel(0)
-            .map(|ch| ch.get_sweep_len() as f32 * data_sec_per_point)
+        self.channel(0)
+            .map(|ch| ch.sweep_len() as f32 * data_sec_per_point)
+    }
+
+    #[deprecated(since = "0.5.0", note = "use `Abf::time_duration` instead")]
+    pub fn get_time_duration(&self) -> Option<f32> {
+        self.time_duration()
     }
 }
-
-// pub trait Abf {
-//     fn get_channel_count(&self) -> usize;
-//     fn get_data(&self, channel: usize) -> Option<Vec<f32>>;
-//     fn get_file_signature(&self) -> AbfKind;
-// }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
@@ -173,7 +242,7 @@ mod tests {
     fn abf_with_channels(channels: Vec<Channel>) -> Abf {
         Abf {
             abf_kind: AbfKind::AbfV2,
-            channels_count: channels.len() as u32,
+            channels_count: channels.len(),
             sweeps_count: 1,
             sampling_rate: 10_000.0,
             channels,
@@ -185,14 +254,14 @@ mod tests {
     #[test]
     fn get_time_axis_is_empty_when_there_are_no_channels() {
         let abf = abf_with_channels(Vec::new());
-        assert!(abf.get_time_axis().is_empty());
+        assert!(abf.time_axis().is_empty());
     }
 
     #[test]
     fn get_time_axis_uses_sweep_len_from_first_available_channel() {
         let (_file, channel) = channel::test_support::i16_channel(&[1, 2, 3], 1);
         let abf = abf_with_channels(vec![channel]);
-        assert_eq!(abf.get_time_axis().len(), 3);
+        assert_eq!(abf.time_axis().len(), 3);
     }
 
     #[test]
@@ -200,5 +269,20 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Abf>();
         assert_send_sync::<Channel>();
+    }
+
+    #[test]
+    fn abf_and_channel_implement_debug() {
+        fn assert_debug<T: fmt::Debug>() {}
+        assert_debug::<Abf>();
+        assert_debug::<Channel>();
+        assert_debug::<AbfKind>();
+        assert_debug::<channel::FileKind>();
+    }
+
+    #[test]
+    fn debug_format_does_not_panic() {
+        let abf = abf_with_channels(Vec::new());
+        assert!(format!("{abf:?}").contains("Abf"));
     }
 }

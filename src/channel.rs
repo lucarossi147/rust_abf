@@ -1,5 +1,6 @@
 use crate::error::AbfError;
 use crate::storage::Storage;
+use std::fmt;
 use std::sync::Arc;
 
 /// The on-disk sample representation of a channel, mirroring ABF2's `nDataFormat`
@@ -37,7 +38,7 @@ pub(crate) struct ChannelLayout {
 ///
 /// No sample data is copied at construction time: every sweep is decoded
 /// on demand, straight out of the shared [`Storage`], when
-/// [`Channel::get_sweep`] or [`Channel::get_raw_sweep`] is called.
+/// [`Channel::sweep`] or [`Channel::raw_sweep`] is called.
 pub struct Channel {
     storage: Arc<Storage>,
     data_offset: usize,
@@ -45,23 +46,38 @@ pub struct Channel {
     channel_count: usize,
     file_kind: FileKind,
     sweep_len: usize,
-    sweeps_count: u32,
-    uom: String,
+    sweeps_count: usize,
+    uom: Option<String>,
     gain: f32,
     offset: f32,
-    label: String,
+    label: Option<String>,
+}
+
+impl fmt::Debug for Channel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Channel")
+            .field("index", &self.channel_index)
+            .field("label", &self.label)
+            .field("uom", &self.uom)
+            .field("gain", &self.gain)
+            .field("offset", &self.offset)
+            .field("file_kind", &self.file_kind)
+            .field("sweep_len", &self.sweep_len)
+            .field("sweeps_count", &self.sweeps_count)
+            .finish()
+    }
 }
 
 impl Channel {
     pub(crate) fn new(
         layout: ChannelLayout,
-        uom: String,
+        uom: Option<String>,
         gain: f32,
         offset: f32,
-        label: String,
-        sweeps_count: u32,
+        label: Option<String>,
+        sweeps_count: usize,
     ) -> Self {
-        let sweep_len = layout.samples_per_channel / sweeps_count.max(1) as usize;
+        let sweep_len = layout.samples_per_channel / sweeps_count.max(1);
         Self {
             storage: layout.storage,
             data_offset: layout.data_offset,
@@ -77,24 +93,66 @@ impl Channel {
         }
     }
 
+    /// This channel's index within its [`crate::Abf`]'s channel list, i.e.
+    /// the position [`crate::Abf::channel`]/[`crate::Abf::channels`] would
+    /// return it at.
+    #[must_use]
+    pub fn index(&self) -> usize {
+        self.channel_index
+    }
+
+    /// The channel's unit of measurement (e.g. `"pA"`, `"mV"`), or `None` if
+    /// the ABF file's string table has no entry for it.
+    #[must_use]
+    pub fn uom(&self) -> Option<&str> {
+        self.uom.as_deref()
+    }
+
+    #[deprecated(since = "0.5.0", note = "use `Channel::uom` instead")]
     pub fn get_uom(&self) -> &str {
-        &self.uom
+        self.uom().unwrap_or("nan")
     }
 
+    /// The channel's label (e.g. `"IN 0"`), or `None` if the ABF file's
+    /// string table has no entry for it.
+    #[must_use]
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_deref()
+    }
+
+    #[deprecated(since = "0.5.0", note = "use `Channel::label` instead")]
     pub fn get_label(&self) -> &str {
-        &self.label
+        self.label().unwrap_or("nan")
     }
 
-    pub fn get_gain(&self) -> f32 {
+    #[must_use]
+    pub fn gain(&self) -> f32 {
         self.gain
     }
 
-    pub fn get_offset(&self) -> f32 {
+    #[deprecated(since = "0.5.0", note = "use `Channel::gain` instead")]
+    pub fn get_gain(&self) -> f32 {
+        self.gain()
+    }
+
+    #[must_use]
+    pub fn offset(&self) -> f32 {
         self.offset
     }
 
-    pub fn get_file_kind(&self) -> FileKind {
+    #[deprecated(since = "0.5.0", note = "use `Channel::offset` instead")]
+    pub fn get_offset(&self) -> f32 {
+        self.offset()
+    }
+
+    #[must_use]
+    pub fn file_kind(&self) -> FileKind {
         self.file_kind
+    }
+
+    #[deprecated(since = "0.5.0", note = "use `Channel::file_kind` instead")]
+    pub fn get_file_kind(&self) -> FileKind {
+        self.file_kind()
     }
 
     /// Absolute byte offset of this channel's `per_channel_index`-th sample
@@ -135,39 +193,51 @@ impl Channel {
     /// Returns the raw, unscaled int16 samples for a sweep.
     ///
     /// Only meaningful for [`FileKind::I16`] channels. Float32 channels are
-    /// already stored in physical units (see [`Channel::get_sweep`]), so
+    /// already stored in physical units (see [`Channel::sweep`]), so
     /// there is no int16 representation to hand back and this always
     /// returns `None` for them.
+    #[must_use]
+    pub fn raw_sweep(&self, sweep: usize) -> Option<Vec<i16>> {
+        Some(self.raw_sweep_iter(sweep)?.collect())
+    }
+
+    #[deprecated(since = "0.5.0", note = "use `Channel::raw_sweep` instead")]
     pub fn get_raw_sweep(&self, sweep: u32) -> Option<Vec<i16>> {
-        Some(self.raw_sweep_iter(sweep as usize)?.collect())
+        self.raw_sweep(sweep as usize)
     }
 
     /// Returns the sweep in physical units.
     ///
     /// Int16 data is scaled by `gain`/`offset`; float32 data is returned as
     /// stored, since pyABF does not apply gain/offset scaling to it either.
-    pub fn get_sweep(&self, sweep: u32) -> Option<Vec<f32>> {
+    #[must_use]
+    pub fn sweep(&self, sweep: usize) -> Option<Vec<f32>> {
         if sweep >= self.sweeps_count {
             return None;
         }
         let mut out = vec![0.0f32; self.sweep_len];
-        self.read_sweep_into(sweep as usize, &mut out).ok()?;
+        self.read_sweep_into(sweep, &mut out).ok()?;
         Some(out)
+    }
+
+    #[deprecated(since = "0.5.0", note = "use `Channel::sweep` instead")]
+    pub fn get_sweep(&self, sweep: u32) -> Option<Vec<f32>> {
+        self.sweep(sweep as usize)
     }
 
     /// Decodes a sweep's samples in physical units directly into `out`,
     /// without allocating.
     ///
     /// Int16 data is scaled by `gain`/`offset`; float32 data is written as
-    /// stored (see [`Channel::get_sweep`]). `out`'s length must equal
-    /// [`Channel::get_sweep_len`], and `sweep` must be a valid sweep index
+    /// stored (see [`Channel::sweep`]). `out`'s length must equal
+    /// [`Channel::sweep_len`], and `sweep` must be a valid sweep index
     /// for this channel, otherwise this returns `Err` without modifying
     /// `out`.
     pub fn read_sweep_into(&self, sweep: usize, out: &mut [f32]) -> Result<(), AbfError> {
-        if sweep >= self.sweeps_count as usize {
+        if sweep >= self.sweeps_count {
             return Err(AbfError::SweepOutOfRange {
                 sweep,
-                sweeps_count: self.sweeps_count as usize,
+                sweeps_count: self.sweeps_count,
             });
         }
         if out.len() != self.sweep_len {
@@ -197,9 +267,9 @@ impl Channel {
     ///
     /// Each sample is decoded on demand as the iterator is advanced, so
     /// consuming it (e.g. via `for`, `.sum()`, or `.zip(..)`) does not
-    /// allocate. See [`Channel::get_sweep`] for the scaling rules.
+    /// allocate. See [`Channel::sweep`] for the scaling rules.
     pub fn sweep_iter(&self, sweep: usize) -> Option<impl ExactSizeIterator<Item = f32> + '_> {
-        if sweep >= self.sweeps_count as usize {
+        if sweep >= self.sweeps_count {
             return None;
         }
         let start = self.sweep_len * sweep;
@@ -213,24 +283,35 @@ impl Channel {
 
     /// Returns a lazy iterator over a sweep's raw, unscaled int16 samples,
     /// or `None` if `sweep` is out of range or the channel is float32 (see
-    /// [`Channel::get_raw_sweep`]).
+    /// [`Channel::raw_sweep`]).
     ///
     /// Each sample is decoded on demand as the iterator is advanced, so
     /// consuming it does not allocate.
     pub fn raw_sweep_iter(&self, sweep: usize) -> Option<impl ExactSizeIterator<Item = i16> + '_> {
-        if sweep >= self.sweeps_count as usize || self.file_kind != FileKind::I16 {
+        if sweep >= self.sweeps_count || self.file_kind != FileKind::I16 {
             return None;
         }
         let start = self.sweep_len * sweep;
         Some((start..start + self.sweep_len).map(move |j| self.read_i16(j)))
     }
 
-    pub fn get_sweeps(&self) -> impl Iterator<Item = Option<Vec<f32>>> + '_ {
-        (0..self.sweeps_count).map(|s| self.get_sweep(s))
+    pub fn sweeps(&self) -> impl Iterator<Item = Option<Vec<f32>>> + '_ {
+        (0..self.sweeps_count).map(|s| self.sweep(s))
     }
 
-    pub fn get_sweep_len(&self) -> usize {
+    #[deprecated(since = "0.5.0", note = "use `Channel::sweeps` instead")]
+    pub fn get_sweeps(&self) -> impl Iterator<Item = Option<Vec<f32>>> + '_ {
+        self.sweeps()
+    }
+
+    #[must_use]
+    pub fn sweep_len(&self) -> usize {
         self.sweep_len
+    }
+
+    #[deprecated(since = "0.5.0", note = "use `Channel::sweep_len` instead")]
+    pub fn get_sweep_len(&self) -> usize {
+        self.sweep_len()
     }
 }
 
@@ -246,7 +327,7 @@ pub(crate) mod test_support {
     fn build_channel(
         bytes: &[u8],
         file_kind: FileKind,
-        sweeps_count: u32,
+        sweeps_count: usize,
     ) -> (tempfile::NamedTempFile, Channel) {
         let mut file = tempfile::NamedTempFile::new().expect("create temp file");
         file.write_all(bytes).expect("write temp file");
@@ -264,10 +345,10 @@ pub(crate) mod test_support {
         };
         let channel = Channel::new(
             layout,
-            "test".to_string(),
+            Some("test".to_string()),
             1.0,
             0.0,
-            "test".to_string(),
+            Some("test".to_string()),
             sweeps_count,
         );
         (file, channel)
@@ -275,7 +356,7 @@ pub(crate) mod test_support {
 
     pub(crate) fn i16_channel(
         values: &[i16],
-        sweeps_count: u32,
+        sweeps_count: usize,
     ) -> (tempfile::NamedTempFile, Channel) {
         let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
         build_channel(&bytes, FileKind::I16, sweeps_count)
@@ -283,7 +364,7 @@ pub(crate) mod test_support {
 
     pub(crate) fn f32_channel(
         values: &[f32],
-        sweeps_count: u32,
+        sweeps_count: usize,
     ) -> (tempfile::NamedTempFile, Channel) {
         let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
         build_channel(&bytes, FileKind::F32, sweeps_count)
@@ -295,26 +376,26 @@ pub(crate) mod test_support {
 mod tests {
     use super::*;
 
-    fn make_channel(values: Vec<i16>, sweeps_count: u32) -> Channel {
+    fn make_channel(values: Vec<i16>, sweeps_count: usize) -> Channel {
         test_support::i16_channel(&values, sweeps_count).1
     }
 
-    fn make_f32_channel(values: Vec<f32>, sweeps_count: u32) -> Channel {
+    fn make_f32_channel(values: Vec<f32>, sweeps_count: usize) -> Channel {
         test_support::f32_channel(&values, sweeps_count).1
     }
 
     #[test]
     fn get_raw_sweep_returns_none_at_sweeps_count_boundary() {
         let ch = make_channel(vec![0, 1, 2, 3, 4, 5], 3);
-        assert_eq!(ch.get_raw_sweep(3), None);
-        assert_eq!(ch.get_raw_sweep(u32::MAX), None);
+        assert_eq!(ch.raw_sweep(3), None);
+        assert_eq!(ch.raw_sweep(usize::MAX), None);
     }
 
     #[test]
     fn get_raw_sweep_returns_exact_sweep_len_for_last_sweep() {
         let ch = make_channel(vec![0, 1, 2, 3, 4, 5], 3);
-        let last = ch.get_raw_sweep(2).unwrap();
-        assert_eq!(last.len(), ch.get_sweep_len());
+        let last = ch.raw_sweep(2).unwrap();
+        assert_eq!(last.len(), ch.sweep_len());
         assert_eq!(last, vec![4, 5]);
     }
 
@@ -325,27 +406,24 @@ mod tests {
         // that doesn't fit evenly is excluded rather than tacked onto the
         // last sweep.
         let ch = make_channel(vec![10, 20, 30, 40, 50, 60, 70], 3);
-        assert_eq!(ch.get_sweep_len(), 2);
+        assert_eq!(ch.sweep_len(), 2);
         for s in 0..3 {
-            assert_eq!(ch.get_raw_sweep(s).unwrap().len(), 2);
+            assert_eq!(ch.raw_sweep(s).unwrap().len(), 2);
         }
-        assert_eq!(ch.get_raw_sweep(2).unwrap(), vec![50, 60]);
+        assert_eq!(ch.raw_sweep(2).unwrap(), vec![50, 60]);
     }
 
     #[test]
     fn get_file_kind_reflects_the_stored_representation() {
-        assert_eq!(make_channel(vec![0], 1).get_file_kind(), FileKind::I16);
-        assert_eq!(
-            make_f32_channel(vec![0.0], 1).get_file_kind(),
-            FileKind::F32
-        );
+        assert_eq!(make_channel(vec![0], 1).file_kind(), FileKind::I16);
+        assert_eq!(make_f32_channel(vec![0.0], 1).file_kind(), FileKind::F32);
     }
 
     #[test]
     fn f32_channel_get_raw_sweep_is_always_none() {
         let ch = make_f32_channel(vec![1.5, -2.25, 3.0, 4.0], 2);
-        assert_eq!(ch.get_raw_sweep(0), None);
-        assert_eq!(ch.get_raw_sweep(1), None);
+        assert_eq!(ch.raw_sweep(0), None);
+        assert_eq!(ch.raw_sweep(1), None);
     }
 
     #[test]
@@ -354,14 +432,14 @@ mod tests {
         // gain/offset must be ignored for float data even if non-default.
         ch.gain = 2.0;
         ch.offset = 100.0;
-        assert_eq!(ch.get_sweep(0).unwrap(), vec![1.5, -2.25]);
-        assert_eq!(ch.get_sweep(1).unwrap(), vec![3.0, 4.0]);
+        assert_eq!(ch.sweep(0).unwrap(), vec![1.5, -2.25]);
+        assert_eq!(ch.sweep(1).unwrap(), vec![3.0, 4.0]);
     }
 
     #[test]
     fn f32_channel_get_sweep_returns_none_out_of_range() {
         let ch = make_f32_channel(vec![1.5, -2.25], 1);
-        assert_eq!(ch.get_sweep(1), None);
+        assert_eq!(ch.sweep(1), None);
     }
 
     #[test]
@@ -369,8 +447,8 @@ mod tests {
         let mut ch = make_channel(vec![1, 2, 3, 4], 2);
         ch.gain = 2.0;
         ch.offset = 1.0;
-        assert_eq!(ch.get_sweep(0).unwrap(), vec![3.0, 5.0]);
-        assert_eq!(ch.get_sweep(1).unwrap(), vec![7.0, 9.0]);
+        assert_eq!(ch.sweep(0).unwrap(), vec![3.0, 5.0]);
+        assert_eq!(ch.sweep(1).unwrap(), vec![7.0, 9.0]);
     }
 
     #[test]
@@ -469,6 +547,45 @@ mod tests {
     }
 
     #[test]
+    fn index_reflects_position_in_the_channel_layout() {
+        let (_file, ch1) = test_support::i16_channel(&[1, 2, 3], 1);
+        assert_eq!(ch1.index(), 0);
+    }
+
+    #[test]
+    fn uom_and_label_are_none_when_not_provided() {
+        let layout_channel = {
+            let mut file = tempfile::NamedTempFile::new().unwrap();
+            {
+                use std::io::Write;
+                file.write_all(&[0, 0]).unwrap();
+                file.flush().unwrap();
+            }
+            let mmap = unsafe { memmap2::Mmap::map(file.as_file()).unwrap() };
+            let storage = Arc::new(Storage::Mmap(mmap));
+            let channel = Channel::new(
+                ChannelLayout {
+                    storage,
+                    data_offset: 0,
+                    channel_index: 0,
+                    channel_count: 1,
+                    samples_per_channel: 1,
+                    file_kind: FileKind::I16,
+                },
+                None,
+                1.0,
+                0.0,
+                None,
+                1,
+            );
+            (file, channel)
+        };
+        let (_file, ch) = layout_channel;
+        assert_eq!(ch.uom(), None);
+        assert_eq!(ch.label(), None);
+    }
+
+    #[test]
     fn multi_channel_layout_deinterleaves_by_stride() {
         // interleaved as ch0, ch1, ch0, ch1, ch0, ch1
         let values: [i16; 6] = [1, -1, 2, -2, 3, -3];
@@ -491,10 +608,10 @@ mod tests {
                 samples_per_channel: 3,
                 file_kind: FileKind::I16,
             },
-            "test".to_string(),
+            Some("test".to_string()),
             1.0,
             0.0,
-            "ch0".to_string(),
+            Some("ch0".to_string()),
             1,
         );
         let ch1 = Channel::new(
@@ -506,13 +623,15 @@ mod tests {
                 samples_per_channel: 3,
                 file_kind: FileKind::I16,
             },
-            "test".to_string(),
+            Some("test".to_string()),
             1.0,
             0.0,
-            "ch1".to_string(),
+            Some("ch1".to_string()),
             1,
         );
-        assert_eq!(ch0.get_raw_sweep(0).unwrap(), vec![1, 2, 3]);
-        assert_eq!(ch1.get_raw_sweep(0).unwrap(), vec![-1, -2, -3]);
+        assert_eq!(ch0.raw_sweep(0).unwrap(), vec![1, 2, 3]);
+        assert_eq!(ch1.raw_sweep(0).unwrap(), vec![-1, -2, -3]);
+        assert_eq!(ch0.index(), 0);
+        assert_eq!(ch1.index(), 1);
     }
 }
