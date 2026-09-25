@@ -1,5 +1,4 @@
 use crate::error::AbfError;
-use byteorder::{LittleEndian, ReadBytesExt};
 
 /// A bounds-checked little-endian reader over a borrowed byte buffer.
 ///
@@ -42,33 +41,43 @@ impl<'a> ByteReader<'a> {
     }
 
     pub fn read_u16(&self, section: &'static str, offset: usize) -> Result<u16, AbfError> {
-        let mut s = self.slice(section, offset, 2)?;
-        s.read_u16::<LittleEndian>()
-            .map_err(|_| AbfError::Truncated { section, offset })
+        let s = self.slice(section, offset, 2)?;
+        let bytes: [u8; 2] = s
+            .try_into()
+            .map_err(|_| AbfError::Truncated { section, offset })?;
+        Ok(u16::from_le_bytes(bytes))
     }
 
     pub fn read_i16(&self, section: &'static str, offset: usize) -> Result<i16, AbfError> {
-        let mut s = self.slice(section, offset, 2)?;
-        s.read_i16::<LittleEndian>()
-            .map_err(|_| AbfError::Truncated { section, offset })
+        let s = self.slice(section, offset, 2)?;
+        let bytes: [u8; 2] = s
+            .try_into()
+            .map_err(|_| AbfError::Truncated { section, offset })?;
+        Ok(i16::from_le_bytes(bytes))
     }
 
     pub fn read_u32(&self, section: &'static str, offset: usize) -> Result<u32, AbfError> {
-        let mut s = self.slice(section, offset, 4)?;
-        s.read_u32::<LittleEndian>()
-            .map_err(|_| AbfError::Truncated { section, offset })
+        let s = self.slice(section, offset, 4)?;
+        let bytes: [u8; 4] = s
+            .try_into()
+            .map_err(|_| AbfError::Truncated { section, offset })?;
+        Ok(u32::from_le_bytes(bytes))
     }
 
     pub fn read_i32(&self, section: &'static str, offset: usize) -> Result<i32, AbfError> {
-        let mut s = self.slice(section, offset, 4)?;
-        s.read_i32::<LittleEndian>()
-            .map_err(|_| AbfError::Truncated { section, offset })
+        let s = self.slice(section, offset, 4)?;
+        let bytes: [u8; 4] = s
+            .try_into()
+            .map_err(|_| AbfError::Truncated { section, offset })?;
+        Ok(i32::from_le_bytes(bytes))
     }
 
     pub fn read_f32(&self, section: &'static str, offset: usize) -> Result<f32, AbfError> {
-        let mut s = self.slice(section, offset, 4)?;
-        s.read_f32::<LittleEndian>()
-            .map_err(|_| AbfError::Truncated { section, offset })
+        let s = self.slice(section, offset, 4)?;
+        let bytes: [u8; 4] = s
+            .try_into()
+            .map_err(|_| AbfError::Truncated { section, offset })?;
+        Ok(f32::from_le_bytes(bytes))
     }
 
     pub fn read_str(

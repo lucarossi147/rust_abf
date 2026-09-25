@@ -132,3 +132,30 @@ per-call thread-pool/work-splitting bookkeeping). The new
 `tests/memory.rs` asserts the last column directly: reading every sweep of
 every channel through one reused buffer allocates no more than the buffer
 itself did.
+
+## Before / after [9] (remove `byteorder`, confirm `rayon` already gone)
+
+[9] found that `rayon` had already been fully removed from `src/` as part of
+[8] (see above) and was not a `Cargo.toml` dependency to begin with, so the
+only remaining work was replacing `byteorder`'s `ReadBytesExt` calls in
+`src/byte_reader.rs` with `u16/i16/u32/i32/f32::from_le_bytes`. `ByteReader`
+is only used for header/section parsing, not per-sample decoding (`Channel`'s
+sweep decode already used `from_le_bytes` directly, see `channel.rs`), so no
+timing change on the hot data path is expected. `cargo tree -e normal` now
+shows only `memmap2` (and its own `libc` dependency) as normal dependencies.
+
+### Timing (`cargo bench`, `benches/read.rs`)
+
+| Benchmark | Fixture | Before [9] (= after [8]) | After [9] | Change |
+| --- | --- | --- | --- | --- |
+| `open` | `14o08011_ic_pair.abf` | 21.68 µs | 22.34 µs | ~3% slower (noise) |
+| `open` | `18425108.abf` | 20.98 µs | 20.80 µs | ~1% faster (noise) |
+| `read_all_sweeps_f32` | `14o08011_ic_pair.abf` | 3.679 ms | 3.685 ms | ~0% (noise) |
+| `read_all_sweeps_f32` | `18425108.abf` | 509.5 µs | 512.7 µs | ~1% (noise) |
+| `read_all_sweeps_raw` | `14o08011_ic_pair.abf` | 4.954 ms | 4.965 ms | ~0% (noise) |
+| `read_all_sweeps_raw` | `18425108.abf` | 689.7 µs | 691.6 µs | ~0% (noise) |
+| `read_all_sweeps_into` | `14o08011_ic_pair.abf` | 3.504 ms | 3.491 ms | ~0% (noise) |
+| `read_all_sweeps_into` | `18425108.abf` | 511.5 µs | 512.0 µs | ~0% (noise) |
+
+All deltas are within normal run-to-run noise, as expected since `ByteReader`
+never sat on the per-sample decode path.
