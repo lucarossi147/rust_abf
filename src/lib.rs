@@ -33,7 +33,9 @@ use memmap2::Mmap;
 use std::{
     fs::File,
     path::{Path, PathBuf},
+    sync::Arc,
 };
+use storage::Storage;
 
 mod byte_reader;
 mod error;
@@ -42,6 +44,7 @@ pub use error::AbfError;
 mod abf_v1;
 pub mod abf_v2;
 mod channel;
+mod storage;
 
 // use abf::abf_v2::AbfV2;
 // TODO this will become an Abf Header
@@ -60,18 +63,39 @@ pub struct Abf {
     sampling_rate: f32,
     channels: Vec<Channel>,
     path: PathBuf,
+    /// Keeps the backing storage alive even for a zero-channel file (where no
+    /// `Channel` would otherwise hold a reference to it); every `Channel`
+    /// also holds its own clone, which is what makes lazy, per-sweep decoding
+    /// possible.
+    #[allow(dead_code)]
+    storage: Arc<Storage>,
 }
 
 impl Abf {
+    /// Opens and parses an ABF file.
+    ///
+    /// The file is memory-mapped rather than read into memory, so sample
+    /// data is decoded lazily as sweeps are requested instead of being
+    /// copied onto the heap at open time.
+    ///
+    /// # Caveats
+    ///
+    /// Because the file is memory-mapped, modifying or truncating it on disk
+    /// while the returned `Abf` (or any `Channel` obtained from it) is still
+    /// alive is undefined behavior: the mapping may be read concurrently
+    /// with the external write, with no synchronization between the two.
+    /// Callers must not write to a file while an `Abf` opened from it is in
+    /// use.
     pub fn from_file(filepath: &Path) -> Result<Abf, AbfError> {
         let path = PathBuf::from(filepath);
         let file = File::open(&path)?;
         let memmap = unsafe { Mmap::map(&file)? };
-        let signature = byte_reader::ByteReader::new(&memmap)
+        let storage = Arc::new(Storage::Mmap(memmap));
+        let signature = byte_reader::ByteReader::new(storage.bytes())
             .read_str("file_signature", 0, 4)
             .ok();
         match signature {
-            Some("ABF2") => Abf::from_abf_v2(memmap, path),
+            Some("ABF2") => Abf::from_abf_v2(storage, path),
             Some("ABF ") => Err(AbfError::UnsupportedVersion("ABF1".to_string())),
             _ => Err(AbfError::InvalidSignature),
         }
@@ -140,6 +164,12 @@ impl Abf {
 mod tests {
     use super::*;
 
+    fn empty_storage() -> Arc<Storage> {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mmap = unsafe { Mmap::map(file.as_file()).unwrap() };
+        Arc::new(Storage::Mmap(mmap))
+    }
+
     fn abf_with_channels(channels: Vec<Channel>) -> Abf {
         Abf {
             abf_kind: AbfKind::AbfV2,
@@ -148,6 +178,7 @@ mod tests {
             sampling_rate: 10_000.0,
             channels,
             path: PathBuf::new(),
+            storage: empty_storage(),
         }
     }
 
@@ -159,15 +190,15 @@ mod tests {
 
     #[test]
     fn get_time_axis_uses_sweep_len_from_first_available_channel() {
-        let channel = Channel::new(
-            channel::ChannelValues::I16(std::sync::Arc::from(vec![1_i16, 2, 3])),
-            "mV".to_string(),
-            1.0,
-            0.0,
-            "IN 0".to_string(),
-            1,
-        );
+        let (_file, channel) = channel::test_support::i16_channel(&[1, 2, 3], 1);
         let abf = abf_with_channels(vec![channel]);
         assert_eq!(abf.get_time_axis().len(), 3);
+    }
+
+    #[test]
+    fn abf_and_channel_are_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<Abf>();
+        assert_send_sync::<Channel>();
     }
 }
