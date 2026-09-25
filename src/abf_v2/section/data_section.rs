@@ -1,8 +1,6 @@
 use super::{DataSectionType, Section};
-use crate::channel::ChannelValues;
+use crate::channel::FileKind;
 use crate::error::AbfError;
-use rayon::prelude::*;
-use std::sync::Arc;
 
 /// ABF2 `nDataFormat` value for int16 samples; any other value is float32,
 /// matching pyABF's handling of the header field (see issue #8).
@@ -10,26 +8,27 @@ const DATA_FORMAT_INT16: u16 = 0;
 
 const SECTION: &str = "data";
 
-fn byte_array_to_i16(ba: &[u8]) -> i16 {
-    match ba.try_into() {
-        Ok(arr) => i16::from_le_bytes(arr),
-        Err(_) => 0,
-    }
-}
-
-fn byte_array_to_f32(ba: &[u8]) -> f32 {
-    match ba.try_into() {
-        Ok(arr) => f32::from_le_bytes(arr),
-        Err(_) => 0.0,
-    }
+/// Describes where a data section's interleaved samples live in the backing
+/// storage, without reading or copying any sample bytes: samples are decoded
+/// lazily, straight out of the shared storage, by [`crate::channel::Channel`].
+pub(crate) struct DataLayout {
+    /// Absolute byte offset of the first sample in the backing storage.
+    pub(crate) data_offset: usize,
+    /// Total number of samples in the section, across every channel.
+    pub(crate) total_items: usize,
+    pub(crate) file_kind: FileKind,
 }
 
 impl Section<'_, DataSectionType> {
-    pub fn read(
+    /// Validates the data section's header fields against the backing
+    /// storage and, if there is at least one channel, returns a
+    /// [`DataLayout`] describing where its samples live. Returns `Ok(None)`
+    /// for a zero-channel file, matching the absence of any data to lay out.
+    pub(crate) fn layout(
         &self,
         number_of_channels: usize,
         data_format: u16,
-    ) -> Result<Vec<ChannelValues>, AbfError> {
+    ) -> Result<Option<DataLayout>, AbfError> {
         let expected_width: u32 = if data_format == DATA_FORMAT_INT16 {
             2
         } else {
@@ -45,7 +44,7 @@ impl Section<'_, DataSectionType> {
             });
         }
         if number_of_channels == 0 {
-            return Ok(Vec::new());
+            return Ok(None);
         }
 
         let total_bytes =
@@ -70,48 +69,27 @@ impl Section<'_, DataSectionType> {
             section: SECTION,
             reason: "section end exceeds addressable range".to_string(),
         })?;
-        let byte_count =
-            usize::try_from(self.byte_count).map_err(|_| AbfError::InvalidSection {
+
+        // Validates that the section fits within the backing storage without
+        // copying any of it: `read_bytes` returns a borrowed slice.
+        self.reader.read_bytes(SECTION, from, to - from)?;
+
+        let total_items =
+            usize::try_from(self.item_count).map_err(|_| AbfError::InvalidSection {
                 section: SECTION,
-                reason: "byte_count exceeds addressable range".to_string(),
+                reason: "item_count exceeds addressable range".to_string(),
             })?;
-
-        let bytes = self.reader.read_bytes(SECTION, from, to - from)?;
-        let chunks = bytes.par_chunks_exact(byte_count);
-        Ok(if data_format == DATA_FORMAT_INT16 {
-            split_by_channel(chunks.map(byte_array_to_i16), number_of_channels)
-                .into_iter()
-                .map(ChannelValues::I16)
-                .collect()
+        let file_kind = if data_format == DATA_FORMAT_INT16 {
+            FileKind::I16
         } else {
-            split_by_channel(chunks.map(byte_array_to_f32), number_of_channels)
-                .into_iter()
-                .map(ChannelValues::F32)
-                .collect()
-        })
-    }
-}
+            FileKind::F32
+        };
 
-fn split_by_channel<I, T>(partial_res: I, number_of_channels: usize) -> Vec<Arc<[T]>>
-where
-    I: IndexedParallelIterator<Item = T> + Clone,
-    T: Send,
-{
-    match number_of_channels {
-        1 => vec![partial_res.collect::<Arc<[T]>>()],
-        n => {
-            let partial_res_with_idxs = partial_res.enumerate().map(|(i, e)| (i % n, e));
-            // TODO, the last thing that comes to my mind to speedup even more the program is making the partial_res_with_idxs mutable and remove at every iteration
-            // the entries that have been used (if channel 0 is been used, then we can remove every element of that channel and the next iteration will be 1/n faster)
-            (0..n)
-                .map(|c| {
-                    partial_res_with_idxs
-                        .clone()
-                        .filter_map(|(idx, e)| if idx == c { Some(e) } else { None })
-                        .collect()
-                })
-                .collect()
-        }
+        Ok(Some(DataLayout {
+            data_offset: from,
+            total_items,
+            file_kind,
+        }))
     }
 }
 
@@ -121,30 +99,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn split_by_channel_deinterleaves_a_single_channel() {
-        let data = vec![10_i16, 20, 30];
-        let result = split_by_channel(data.into_par_iter(), 1);
-        assert_eq!(result.len(), 1);
-        assert_eq!(&*result[0], &[10, 20, 30]);
-    }
-
-    #[test]
-    fn split_by_channel_deinterleaves_multiple_channels() {
-        // interleaved as ch0, ch1, ch0, ch1, ch0, ch1
-        let data = vec![1.0_f32, -1.0, 2.0, -2.0, 3.0, -3.0];
-        let result = split_by_channel(data.into_par_iter(), 2);
-        assert_eq!(result.len(), 2);
-        assert_eq!(&*result[0], &[1.0, 2.0, 3.0]);
-        assert_eq!(&*result[1], &[-1.0, -2.0, -3.0]);
-    }
-
-    #[test]
-    fn byte_array_to_i16_returns_zero_for_short_input_instead_of_panicking() {
-        assert_eq!(byte_array_to_i16(&[0x01]), 0);
-    }
-
-    #[test]
-    fn byte_array_to_f32_returns_zero_for_short_input_instead_of_panicking() {
-        assert_eq!(byte_array_to_f32(&[0x01, 0x02]), 0.0);
+    fn layout_is_none_for_zero_channels() {
+        // A 12-byte section header: block_number=0, byte_count=2 (matching
+        // DATA_FORMAT_INT16's expected width), item_count=0. With
+        // number_of_channels=0, `layout` must short circuit to `Ok(None)`
+        // before doing any section-size validation.
+        let mut bytes = [0u8; 12];
+        bytes[4..8].copy_from_slice(&2u32.to_le_bytes());
+        let reader = crate::byte_reader::ByteReader::new(&bytes);
+        let section = Section::<DataSectionType>::new(reader, 0, std::marker::PhantomData).unwrap();
+        assert!(section.layout(0, DATA_FORMAT_INT16).unwrap().is_none());
     }
 }

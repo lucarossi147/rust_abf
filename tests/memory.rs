@@ -13,9 +13,27 @@ mod alloc_counter;
 use alloc_counter::{peak_bytes_during, CountingAllocator};
 use rust_abf::Abf;
 use std::path::Path;
+use std::sync::Mutex;
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator::new();
+
+// The allocator above tracks a single, process-wide byte count: an
+// allocation on *any* thread bumps the same counter, regardless of which
+// thread's measured section is currently running. So it's not enough to
+// serialize the individual `peak_bytes_during` calls (any allocation by the
+// *other* test running concurrently in between would still be attributed to
+// whichever measurement happens to be in progress) — the two `#[test]`
+// functions in this binary must not run concurrently at all, since `cargo
+// test` otherwise runs them in parallel by default. Each test holds this
+// mutex for its entire body to guarantee that.
+static MEASURE_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_measurements() -> std::sync::MutexGuard<'static, ()> {
+    MEASURE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 // ABF1 fixture is excluded: ABF1 parsing is not implemented yet (`Abf::from_file` panics on it).
 const FIXTURES: &[&str] = &[
@@ -23,8 +41,28 @@ const FIXTURES: &[&str] = &[
     "tests/test_abf/18425108.abf",
 ];
 
+/// Issue [7]: `Abf::from_file` must memory-map and lazily decode sample data
+/// instead of eagerly copying/de-interleaving it onto the heap, so peak
+/// allocation at open time should stay small and independent of file size.
+const MAX_OPEN_PEAK_BYTES: usize = 64 * 1024;
+
+#[test]
+fn opening_a_file_does_not_copy_sample_data_onto_the_heap() {
+    let _guard = lock_measurements();
+    for fixture in FIXTURES {
+        let path = Path::new(fixture);
+        let (_abf, open_peak_bytes) =
+            peak_bytes_during(&ALLOCATOR, || Abf::from_file(path).unwrap());
+        assert!(
+            open_peak_bytes < MAX_OPEN_PEAK_BYTES,
+            "{fixture}: from_file peak bytes = {open_peak_bytes}, expected < {MAX_OPEN_PEAK_BYTES}"
+        );
+    }
+}
+
 #[test]
 fn prints_peak_bytes_per_fixture() {
+    let _guard = lock_measurements();
     for fixture in FIXTURES {
         let path = Path::new(fixture);
 

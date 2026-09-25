@@ -1,11 +1,13 @@
 mod section;
 use super::{Abf, Channel};
 use crate::byte_reader::ByteReader;
+use crate::channel::ChannelLayout;
 use crate::error::AbfError;
+use crate::storage::Storage;
 use crate::AbfKind;
-use memmap2::Mmap;
 use section::section_producer::SectionProducer;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 const HEADER: &str = "header";
 
@@ -15,9 +17,9 @@ const HEADER: &str = "header";
 const EVENT_DRIVEN_VARIABLE_LENGTH: i16 = 1;
 
 impl Abf {
-    pub fn from_abf_v2(memmap: Mmap, path: PathBuf) -> Result<Self, AbfError> {
+    pub(crate) fn from_abf_v2(storage: Arc<Storage>, path: PathBuf) -> Result<Self, AbfError> {
         let abf_kind = AbfKind::AbfV2;
-        let reader = ByteReader::new(&memmap);
+        let reader = ByteReader::new(storage.bytes());
         let actual_episodes = reader.read_u32(HEADER, 12)?;
         let data_format: u16 = reader.read_u16(HEADER, 30)?;
 
@@ -42,7 +44,7 @@ impl Abf {
         }
 
         let number_of_channels = adc_section.get_channel_count();
-        let data = data_section.read(number_of_channels, data_format)?;
+        let data_layout = data_section.layout(number_of_channels, data_format)?;
         let adc_infos = adc_section.get_adc_infos()?;
 
         let sampling_rate = 1e6 / protocol_section.adc_sequence_interval()?;
@@ -58,36 +60,48 @@ impl Abf {
                 reason: "channel count exceeds u32".to_string(),
             })?;
 
-        let channels: Vec<Channel> = data
-            .into_iter()
-            .zip(adc_infos.iter())
-            .map(|(values, adc_info)| {
-                let mut gain = 1.0_f32
-                    / adc_info.instrument_scale_factor
-                    / adc_info.signal_gain
-                    / adc_info.adc_programmable_gain;
-                if adc_info.telegraph_enable != 0 {
-                    gain /= adc_info.telegraph_addit_gain;
-                }
-                let gain = gain * adc_range / adc_resolution as f32;
-                let offset = adc_info.instrument_offset - adc_info.signal_offset;
+        let channels: Vec<Channel> = match data_layout {
+            None => Vec::new(),
+            Some(layout) => (0..number_of_channels)
+                .zip(adc_infos.iter())
+                .map(|(channel_index, adc_info)| {
+                    let mut gain = 1.0_f32
+                        / adc_info.instrument_scale_factor
+                        / adc_info.signal_gain
+                        / adc_info.adc_programmable_gain;
+                    if adc_info.telegraph_enable != 0 {
+                        gain /= adc_info.telegraph_addit_gain;
+                    }
+                    let gain = gain * adc_range / adc_resolution as f32;
+                    let offset = adc_info.instrument_offset - adc_info.signal_offset;
 
-                Channel::new(
-                    values,
-                    indexed_strings
-                        .get(adc_info.adc_units_index)
-                        .cloned()
-                        .unwrap_or_else(|| "nan".to_string()),
-                    gain,
-                    offset,
-                    indexed_strings
-                        .get(adc_info.adc_channel_name_index)
-                        .cloned()
-                        .unwrap_or_else(|| "nan".to_string()),
-                    sweeps_count,
-                )
-            })
-            .collect();
+                    let samples_per_channel = layout.total_items / number_of_channels
+                        + usize::from(channel_index < layout.total_items % number_of_channels);
+
+                    Channel::new(
+                        ChannelLayout {
+                            storage: Arc::clone(&storage),
+                            data_offset: layout.data_offset,
+                            channel_index,
+                            channel_count: number_of_channels,
+                            samples_per_channel,
+                            file_kind: layout.file_kind,
+                        },
+                        indexed_strings
+                            .get(adc_info.adc_units_index)
+                            .cloned()
+                            .unwrap_or_else(|| "nan".to_string()),
+                        gain,
+                        offset,
+                        indexed_strings
+                            .get(adc_info.adc_channel_name_index)
+                            .cloned()
+                            .unwrap_or_else(|| "nan".to_string()),
+                        sweeps_count,
+                    )
+                })
+                .collect(),
+        };
 
         Ok(Self {
             abf_kind,
@@ -96,6 +110,7 @@ impl Abf {
             sampling_rate,
             channels,
             path,
+            storage,
         })
     }
 }
