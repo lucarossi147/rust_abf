@@ -26,6 +26,12 @@ pub enum AbfError {
     },
     /// The file uses a recognized but not-yet-supported feature.
     Unsupported(String),
+    /// `Channel::read_sweep_into` was called with a sweep index that is out
+    /// of range for the channel's sweep count.
+    SweepOutOfRange { sweep: usize, sweeps_count: usize },
+    /// `Channel::read_sweep_into`'s output buffer length didn't match the
+    /// channel's sweep length.
+    BufferLengthMismatch { expected: usize, actual: usize },
 }
 
 impl fmt::Display for AbfError {
@@ -46,6 +52,17 @@ impl fmt::Display for AbfError {
                 write!(f, "invalid {section} section: {reason}")
             }
             AbfError::Unsupported(reason) => write!(f, "unsupported: {reason}"),
+            AbfError::SweepOutOfRange {
+                sweep,
+                sweeps_count,
+            } => write!(
+                f,
+                "sweep index {sweep} out of range: channel has {sweeps_count} sweep(s)"
+            ),
+            AbfError::BufferLengthMismatch { expected, actual } => write!(
+                f,
+                "output buffer length {actual} does not match sweep length {expected}"
+            ),
         }
     }
 }
@@ -103,6 +120,22 @@ mod tests {
         assert_eq!(
             AbfError::Unsupported("variable-length event-driven sweeps".to_string()).to_string(),
             "unsupported: variable-length event-driven sweeps"
+        );
+        assert_eq!(
+            AbfError::SweepOutOfRange {
+                sweep: 5,
+                sweeps_count: 3
+            }
+            .to_string(),
+            "sweep index 5 out of range: channel has 3 sweep(s)"
+        );
+        assert_eq!(
+            AbfError::BufferLengthMismatch {
+                expected: 10,
+                actual: 4
+            }
+            .to_string(),
+            "output buffer length 4 does not match sweep length 10"
         );
     }
 
