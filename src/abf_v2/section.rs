@@ -6,6 +6,7 @@ pub mod data_section;
 pub mod protocol_section;
 pub mod section_producer;
 pub mod strings_sections;
+pub mod synch_array_section;
 // pub mod dac_section;
 
 pub struct ProtocolSectionType;
@@ -13,6 +14,7 @@ pub struct AdcSectionType;
 pub struct DacSectionType;
 pub struct StringsSectionType;
 pub struct DataSectionType;
+pub struct SynchArraySectionType;
 
 pub struct Section<'a, SectionType> {
     reader: ByteReader<'a>,

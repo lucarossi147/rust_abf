@@ -24,6 +24,8 @@ pub enum AbfError {
         section: &'static str,
         reason: String,
     },
+    /// The file uses a recognized but not-yet-supported feature.
+    Unsupported(String),
 }
 
 impl fmt::Display for AbfError {
@@ -43,6 +45,7 @@ impl fmt::Display for AbfError {
             AbfError::InvalidSection { section, reason } => {
                 write!(f, "invalid {section} section: {reason}")
             }
+            AbfError::Unsupported(reason) => write!(f, "unsupported: {reason}"),
         }
     }
 }
@@ -96,6 +99,10 @@ mod tests {
             }
             .to_string(),
             "invalid data section: bad width"
+        );
+        assert_eq!(
+            AbfError::Unsupported("variable-length event-driven sweeps".to_string()).to_string(),
+            "unsupported: variable-length event-driven sweeps"
         );
     }
 

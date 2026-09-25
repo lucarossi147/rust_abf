@@ -38,4 +38,12 @@ impl<'a> SectionProducer<'a> {
             std::marker::PhantomData::<DataSectionType>,
         )
     }
+
+    pub fn get_synch_array_section(&self) -> Result<Section<'a, SynchArraySectionType>, AbfError> {
+        Section::new(
+            self.reader,
+            316,
+            std::marker::PhantomData::<SynchArraySectionType>,
+        )
+    }
 }
