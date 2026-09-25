@@ -28,6 +28,8 @@
 // !     println!("Channel 0, Sweep 0 data: {:?}", data);
 // ! }
 // ! ```
+#![doc = include_str!("../README.md")]
+#![warn(missing_docs)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
 use channel::Channel;
