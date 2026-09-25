@@ -94,11 +94,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "This test uses a very large file that is not versioned, and would break the ci"]
     fn test_abfv2_heavy() {
+        let Ok(path) = std::env::var("ABF_HEAVY_FILE") else {
+            eprintln!("skipping: ABF_HEAVY_FILE not set");
+            return;
+        };
         let start_time = Instant::now();
-        let abf =
-            Abf::from_file(Path::new("C:\\Users\\lucar\\Desktop\\file_CH001_000.abf")).unwrap();
+        let abf = Abf::from_file(Path::new(&path)).unwrap();
         let elapsed_time = start_time.elapsed();
         println!("{:?}", elapsed_time);
         assert_eq!(abf.sweep_count(), 1);

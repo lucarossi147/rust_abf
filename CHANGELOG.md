@@ -2,8 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
 ## [Unreleased]
 
+- Packaging metadata (issue [12]): added `repository`, `homepage`, `documentation`,
+  `readme`, `keywords`, `categories`, and `rust-version = "1.66"` to `Cargo.toml` (MSRV
+  determined by `clippy::incompatible_msrv`: `memmap2`'s own MSRV is 1.65, but
+  `std::hint::black_box`, used in `benches/read.rs`, requires 1.66). Added
+  `exclude = ["tests/test_abf/*", "tests/golden/*", "scripts/*", ".github/*", "benches/*"]`
+  so fixtures, golden data, CI scripts, and benchmarks no longer ship in the published
+  crate; `cargo package` is now 44.7 KiB compressed (167.9 KiB uncompressed) with no `.abf`
+  files, down from 3.5+ MB. Back-filled `CHANGELOG.md` with brief `[0.4.0]`–`[0.4.4]`
+  entries. Replaced the hard-coded `C:\Users\lucar\Desktop\...` path in the ignored
+  `test_abfv2_heavy` test with an `ABF_HEAVY_FILE` environment variable; the test now
+  skips (instead of requiring `--ignored`) when the variable is unset.
 - Working docs and doc-tested README (issue [11]): `Channel` and `FileKind` are now
   re-exported from the crate root (`pub use channel::{Channel, FileKind};` in `src/lib.rs`)
   so they actually appear in `cargo doc` output and can be named by callers — previously
@@ -73,3 +86,25 @@ All notable changes to this project will be documented in this file.
 - Fixed all `cargo fmt` and `cargo clippy -D warnings` violations across the crate (no behavior change).
 - Added tests covering `Channel::get_gain`/`get_offset`, `Abf::get_time_axis`, `Abf::get_time_duration`, out-of-bounds sweep access, and invalid file signatures, raising line coverage to ~99%.
 - Fixed: `Channel::get_raw_sweep`/`get_sweep` panicked when called with `sweep == sweeps_count` (off-by-one bound check). Every sweep is now exactly `get_sweep_len()` points long; if the sample count isn't evenly divisible by `sweeps_count`, the trailing remainder is no longer silently appended to the last sweep.
+
+## [0.4.4] - 2025-01-14
+
+- Changed: `Channel` stores its sample buffers behind `Arc` instead of `Vec`, so cloning a
+  `Channel` no longer copies the underlying sample data.
+
+## [0.4.3] - 2024-10-18
+
+- Added `Channel::get_gain`, `Channel::get_offset`, `Channel::get_raw_sweep`,
+  `Channel::get_sweep`, `Channel::get_sweep_len`, and `Abf::get_time_duration`.
+
+## [0.4.2] - 2024-03-06
+
+- Fixed a `Cargo.toml`/README inconsistency from the 0.4.1 release.
+
+## [0.4.1] - 2024-03-06
+
+- Changed: internal module layout refactor of the ABF parsing path (no public API change).
+
+## [0.4.0] - 2024-01-11
+
+- Added `Abf::get_path` and an example demonstrating basic usage.
