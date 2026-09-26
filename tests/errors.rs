@@ -41,6 +41,16 @@ fn from_file_no_panic(path: &Path) -> Result<Abf, AbfError> {
     }
 }
 
+/// Runs `Abf::from_bytes` on `bytes` inside `catch_unwind`, failing the test
+/// with a clear message (instead of aborting the whole test binary) if it
+/// panics, and returns the parse result otherwise.
+fn from_bytes_no_panic(bytes: Vec<u8>) -> Result<Abf, AbfError> {
+    match panic::catch_unwind(|| Abf::from_bytes(bytes)) {
+        Ok(result) => result,
+        Err(_) => panic!("Abf::from_bytes panicked"),
+    }
+}
+
 #[test]
 fn truncation_never_panics_and_is_always_an_error() {
     let original = std::fs::read(FIXTURE).expect("read fixture");
@@ -94,6 +104,59 @@ fn single_byte_corruption_never_panics() {
     panic::set_hook(hook);
 }
 
+/// Same fixture and offsets as `truncation_never_panics_and_is_always_an_error`,
+/// but re-run through `Abf::from_bytes` on an in-memory slice instead of
+/// `Abf::from_file` on a temp-file copy.
+#[test]
+fn truncation_via_from_bytes_never_panics_and_is_always_an_error() {
+    let original = std::fs::read(FIXTURE).expect("read fixture");
+
+    let hook = panic::take_hook();
+    panic::set_hook(Box::new(|_| {}));
+
+    let mut rng = Xorshift64::new(0xABCD_1234_5678_9EF0);
+    let mut offsets: Vec<usize> = (0..8192.min(original.len())).collect();
+    for _ in 0..100 {
+        // 1..original.len() so every offset is a genuine truncation.
+        offsets.push(1 + rng.next_below(original.len() - 1));
+    }
+
+    for offset in offsets {
+        let result = from_bytes_no_panic(original[..offset].to_vec());
+        assert!(
+            result.is_err(),
+            "truncating at offset {offset} unexpectedly parsed successfully"
+        );
+    }
+
+    panic::set_hook(hook);
+}
+
+/// Same fixture and corruption strategy as `single_byte_corruption_never_panics`,
+/// but re-run through `Abf::from_bytes` on an in-memory copy instead of
+/// `Abf::from_file` on a temp-file copy.
+#[test]
+fn single_byte_corruption_via_from_bytes_never_panics() {
+    let original = std::fs::read(FIXTURE).expect("read fixture");
+
+    let hook = panic::take_hook();
+    panic::set_hook(Box::new(|_| {}));
+
+    let corrupt_len = original.len().min(4096);
+    let mut rng = Xorshift64::new(0x1357_9BDF_2468_ACE0);
+    for _ in 0..1000 {
+        let idx = rng.next_below(corrupt_len);
+        let mut corrupted = original.clone();
+        if let Some(byte) = corrupted.get_mut(idx) {
+            *byte ^= 0xFF;
+        }
+        // Ok(_) or Err(_) are both fine here; only a panic is a failure.
+        let _ = from_bytes_no_panic(corrupted);
+    }
+
+    panic::set_hook(hook);
+}
+
 /// Describes just the error side for assertion messages, so callers don't
 /// need to require `T: Debug`.
 fn describe_err<T>(result: &Result<T, AbfError>) -> String {
@@ -129,6 +192,28 @@ fn missing_path_is_io_error() {
     assert!(
         matches!(result, Err(AbfError::Io(_))),
         "expected Err(AbfError::Io(_)), got {}",
+        describe_err(&result)
+    );
+}
+
+#[test]
+fn abf1_fixture_is_unsupported_version_error_via_from_bytes() {
+    let bytes = std::fs::read("tests/test_abf/05210017_vc_abf1.abf").expect("read fixture");
+    let result = Abf::from_bytes(bytes);
+    assert!(
+        matches!(result, Err(AbfError::UnsupportedVersion(_))),
+        "expected Err(AbfError::UnsupportedVersion(_)), got {}",
+        describe_err(&result)
+    );
+}
+
+#[test]
+fn non_abf_file_is_invalid_signature_error_via_from_bytes() {
+    let bytes = std::fs::read("tests/test_abf/wrong_signature.abf").expect("read fixture");
+    let result = Abf::from_bytes(bytes);
+    assert!(
+        matches!(result, Err(AbfError::InvalidSignature)),
+        "expected Err(AbfError::InvalidSignature), got {}",
         describe_err(&result)
     );
 }

@@ -77,7 +77,19 @@ fn approx_eq_rel(actual: f64, expected: f64) -> bool {
 }
 
 fn check_against_golden(abf_path: &str, golden_stem: &str) {
-    let abf = Abf::from_file(Path::new(abf_path)).unwrap();
+    check_abf_against_golden(&Abf::from_file(Path::new(abf_path)).unwrap(), golden_stem);
+}
+
+/// Same checks as [`check_against_golden`], but parses `abf_path` through
+/// `Abf::from_bytes` instead of `Abf::from_file`, so a passing pair of tests
+/// proves the two constructors agree on every golden value, not just on
+/// each other in isolation.
+fn check_bytes_against_golden(abf_path: &str, golden_stem: &str) {
+    let bytes = std::fs::read(abf_path).unwrap();
+    check_abf_against_golden(&Abf::from_bytes(bytes).unwrap(), golden_stem);
+}
+
+fn check_abf_against_golden(abf: &Abf, golden_stem: &str) {
     let golden = load_golden(golden_stem);
 
     assert!(matches!(abf.kind(), AbfKind::AbfV2));
@@ -161,6 +173,16 @@ fn golden_18425108() {
 #[test]
 fn golden_14o08011_ic_pair() {
     check_against_golden("tests/test_abf/14o08011_ic_pair.abf", "14o08011_ic_pair");
+}
+
+#[test]
+fn golden_bytes_18425108() {
+    check_bytes_against_golden("tests/test_abf/18425108.abf", "18425108");
+}
+
+#[test]
+fn golden_bytes_14o08011_ic_pair() {
+    check_bytes_against_golden("tests/test_abf/14o08011_ic_pair.abf", "14o08011_ic_pair");
 }
 
 #[test]
