@@ -7,7 +7,6 @@ pub mod protocol_section;
 pub mod section_producer;
 pub mod strings_sections;
 pub mod synch_array_section;
-// pub mod dac_section;
 
 pub struct ProtocolSectionType;
 pub struct AdcSectionType;
