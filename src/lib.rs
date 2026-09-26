@@ -129,7 +129,37 @@ impl Abf {
         let path = PathBuf::from(filepath);
         let file = File::open(&path)?;
         let memmap = unsafe { Mmap::map(&file)? };
-        let storage = Arc::new(Storage::Mmap(memmap));
+        Abf::from_storage(Arc::new(Storage::Mmap(memmap)), path)
+    }
+
+    /// Parses ABF data already resident in memory, with no file I/O, no
+    /// memory-mapping, and no `unsafe` code — usable on WASM targets and for
+    /// data received over the network.
+    ///
+    /// `bytes` is taken by reference-counted ownership (anything convertible
+    /// to `Arc<[u8]>`, including `Vec<u8>`) rather than copied, and shared
+    /// with every [`Channel`] produced from the returned `Abf` so sample data
+    /// can still be decoded lazily instead of eagerly.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same `Err` variants as [`Abf::from_file`], except that
+    /// [`AbfError::Io`] cannot occur (there is no file to fail to open).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rust_abf::Abf;
+    ///
+    /// let bytes = std::fs::read("tests/test_abf/18425108.abf").unwrap();
+    /// let abf = Abf::from_bytes(bytes).unwrap();
+    /// assert_eq!(abf.channel_count(), 2);
+    /// ```
+    pub fn from_bytes(bytes: impl Into<Arc<[u8]>>) -> Result<Abf, AbfError> {
+        Abf::from_storage(Arc::new(Storage::Owned(bytes.into())), PathBuf::new())
+    }
+
+    fn from_storage(storage: Arc<Storage>, path: PathBuf) -> Result<Abf, AbfError> {
         let signature = byte_reader::ByteReader::new(storage.bytes())
             .read_str("file_signature", 0, 4)
             .ok();
@@ -246,7 +276,8 @@ impl Abf {
         self.sampling_rate()
     }
 
-    /// The filesystem path this `Abf` was opened from.
+    /// The filesystem path this `Abf` was opened from, or an empty path for
+    /// an `Abf` built with [`Abf::from_bytes`].
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path

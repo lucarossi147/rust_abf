@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Added `Abf::from_bytes(impl Into<Arc<[u8]>>) -> Result<Abf, AbfError>` (issue [14]), an
+  owned-buffer constructor that parses ABF data already resident in memory with no file
+  I/O, no memory-mapping, and no `unsafe` code, making it usable on WASM targets and for
+  data received over the network (e.g. `Abf::from_bytes(std::fs::read(path)?)`). Backed by
+  a new `Storage::Owned(Arc<[u8]>)` variant alongside the existing mmap-backed `Storage::Mmap`;
+  `Abf::from_file` and `Abf::from_bytes` now share the same signature-detection/dispatch
+  path. `Abf::path()` returns an empty path for an `Abf` built via `from_bytes`. Added
+  `golden_bytes_*` tests (`tests/golden.rs`) checking `from_bytes(std::fs::read(p))` against
+  the same golden values as `from_file(p)`, and re-ran the issue [5] truncation/corruption
+  fuzz tests and signature/version error tests (`tests/errors.rs`) through `from_bytes` on
+  in-memory buffers, without temp files.
 - Dead and commented-out code cleanup (issue [13]): deleted `src/abf_v1.rs`, which
   contained nothing but a commented-out `impl` block (and its now-unneeded
   `mod abf_v1;` declaration in `src/lib.rs`); deleted the unused
