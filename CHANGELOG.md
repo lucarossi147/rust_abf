@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Dead and commented-out code cleanup (issue [13]): deleted `src/abf_v1.rs`, which
+  contained nothing but a commented-out `impl` block (and its now-unneeded
+  `mod abf_v1;` declaration in `src/lib.rs`); deleted the unused
+  `src/abf_v2/section/dac_section.rs` (never wired into the module tree and
+  referencing a `conversion_util`/`mmap` API that no longer exists); removed the
+  matching commented-out `// pub mod dac_section;` line in
+  `src/abf_v2/section.rs`; and removed the commented-out `test_abfv1` test in
+  `tests/lib.rs`. No behavior change; `AbfKind::AbfV1` and `Section::get_dac_section`
+  (used for header validation) are unaffected.
 - Packaging metadata (issue [12]): added `repository`, `homepage`, `documentation`,
   `readme`, `keywords`, `categories`, and `rust-version = "1.66"` to `Cargo.toml` (MSRV
   determined by `clippy::incompatible_msrv`: `memmap2`'s own MSRV is 1.65, but

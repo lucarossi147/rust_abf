@@ -15,7 +15,6 @@ mod byte_reader;
 mod error;
 pub use error::AbfError;
 
-mod abf_v1;
 mod abf_v2;
 mod channel;
 pub use channel::{Channel, FileKind};

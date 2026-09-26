@@ -23,7 +23,6 @@ impl Abf {
         let actual_episodes = reader.read_u32(HEADER, 12)?;
         let data_format: u16 = reader.read_u16(HEADER, 30)?;
 
-        // useful sections
         let sec_prod = SectionProducer::new(reader);
         let protocol_section = sec_prod.get_protocol_section()?;
         let adc_section = sec_prod.get_adc_section()?;
