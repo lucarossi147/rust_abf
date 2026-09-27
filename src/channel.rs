@@ -208,27 +208,28 @@ impl Channel {
                 * self.file_kind.sample_width()
     }
 
-    /// Decodes the raw int16 sample at `per_channel_index`, or `0` if the
-    /// computed offset somehow falls outside the backing storage. The latter
-    /// should not happen for a `Channel` built from validated section
-    /// metadata, but decoding never panics either way.
-    fn read_i16(&self, per_channel_index: usize) -> i16 {
+    /// Decodes the raw int16 sample at `per_channel_index` from `bytes`
+    /// (obtained once per sweep via `self.storage.bytes()` by the caller, so
+    /// the backing storage's variant is only dispatched on once per sweep
+    /// rather than once per sample), or `0` if the computed offset somehow
+    /// falls outside `bytes`. The latter should not happen for a `Channel`
+    /// built from validated section metadata, but decoding never panics
+    /// either way.
+    fn read_i16(&self, bytes: &[u8], per_channel_index: usize) -> i16 {
         let offset = self.sample_byte_offset(per_channel_index);
-        self.storage
-            .bytes()
+        bytes
             .get(offset..offset + 2)
             .and_then(|b| <[u8; 2]>::try_from(b).ok())
             .map(i16::from_le_bytes)
             .unwrap_or(0)
     }
 
-    /// Decodes the raw float32 sample at `per_channel_index`, or `0.0` if the
-    /// computed offset somehow falls outside the backing storage (see
+    /// Decodes the raw float32 sample at `per_channel_index` from `bytes`,
+    /// or `0.0` if the computed offset somehow falls outside `bytes` (see
     /// [`Channel::read_i16`]).
-    fn read_f32(&self, per_channel_index: usize) -> f32 {
+    fn read_f32(&self, bytes: &[u8], per_channel_index: usize) -> f32 {
         let offset = self.sample_byte_offset(per_channel_index);
-        self.storage
-            .bytes()
+        bytes
             .get(offset..offset + 4)
             .and_then(|b| <[u8; 4]>::try_from(b).ok())
             .map(f32::from_le_bytes)
@@ -311,15 +312,16 @@ impl Channel {
             });
         }
         let start = self.sweep_len * sweep;
+        let bytes = self.storage.bytes();
         match self.file_kind {
             FileKind::I16 => {
                 for (j, o) in out.iter_mut().enumerate() {
-                    *o = self.read_i16(start + j) as f32 * self.gain + self.offset;
+                    *o = self.read_i16(bytes, start + j) as f32 * self.gain + self.offset;
                 }
             }
             FileKind::F32 => {
                 for (j, o) in out.iter_mut().enumerate() {
-                    *o = self.read_f32(start + j);
+                    *o = self.read_f32(bytes, start + j);
                 }
             }
         }
@@ -337,10 +339,11 @@ impl Channel {
             return None;
         }
         let start = self.sweep_len * sweep;
+        let bytes = self.storage.bytes();
         Some(
             (start..start + self.sweep_len).map(move |j| match self.file_kind {
-                FileKind::I16 => self.read_i16(j) as f32 * self.gain + self.offset,
-                FileKind::F32 => self.read_f32(j),
+                FileKind::I16 => self.read_i16(bytes, j) as f32 * self.gain + self.offset,
+                FileKind::F32 => self.read_f32(bytes, j),
             }),
         )
     }
@@ -356,7 +359,8 @@ impl Channel {
             return None;
         }
         let start = self.sweep_len * sweep;
-        Some((start..start + self.sweep_len).map(move |j| self.read_i16(j)))
+        let bytes = self.storage.bytes();
+        Some((start..start + self.sweep_len).map(move |j| self.read_i16(bytes, j)))
     }
 
     /// Returns an iterator over every sweep in physical units, in order
