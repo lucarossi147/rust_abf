@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Owned-buffer constructor (issue [14]): added `Abf::from_bytes(impl Into<Arc<[u8]>>) ->
+  Result<Abf, AbfError>`, which parses ABF data already resident in memory instead of
+  memory-mapping a file. It uses no `unsafe` code, so it works in contexts without
+  filesystem access (e.g. WebAssembly) or when the bytes come from the network.
+  `Abf::path()` returns an empty path for `Abf`s built this way. Added a
+  `Storage::Owned(Arc<[u8]>)` variant alongside the existing `Storage::Mmap`; both
+  `Abf::from_file` and `Abf::from_bytes` now share the same signature-detection and
+  parsing logic. Hoisted the `Storage::bytes()` call in `Channel`'s per-sample decode
+  loops out of the hot loop (previously called once per sample) to keep the added
+  `Storage` variant from costing a branch on every sample read.
 - Dead and commented-out code cleanup (issue [13]): deleted `src/abf_v1.rs`, which
   contained nothing but a commented-out `impl` block (and its now-unneeded
   `mod abf_v1;` declaration in `src/lib.rs`); deleted the unused
