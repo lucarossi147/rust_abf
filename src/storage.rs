@@ -1,20 +1,20 @@
 use memmap2::Mmap;
+use std::sync::Arc;
 
 /// Backing byte storage for a parsed [`crate::Abf`], shared (via `Arc`) by
 /// every [`crate::channel::Channel`] so sample data can be decoded lazily,
-/// straight out of the mapping, instead of being copied onto the heap at
-/// open time.
-///
-/// Only memory-mapped files are supported today; issue 14 adds an
-/// `Owned(Vec<u8>)` variant for an `Abf::from_bytes` constructor.
+/// straight out of the mapping (or buffer), instead of being copied onto the
+/// heap at open time.
 pub(crate) enum Storage {
     Mmap(Mmap),
+    Owned(Arc<[u8]>),
 }
 
 impl Storage {
     pub(crate) fn bytes(&self) -> &[u8] {
         match self {
             Storage::Mmap(mmap) => &mmap[..],
+            Storage::Owned(bytes) => bytes,
         }
     }
 }
@@ -34,5 +34,11 @@ mod tests {
         let mmap = unsafe { MmapOptions::new().map(file.as_file()).unwrap() };
         let storage = Storage::Mmap(mmap);
         assert_eq!(storage.bytes(), b"hello storage");
+    }
+
+    #[test]
+    fn bytes_returns_the_owned_content() {
+        let storage = Storage::Owned(Arc::from(b"hello owned".as_slice()));
+        assert_eq!(storage.bytes(), b"hello owned");
     }
 }

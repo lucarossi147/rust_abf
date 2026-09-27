@@ -130,6 +130,38 @@ impl Abf {
         let file = File::open(&path)?;
         let memmap = unsafe { Mmap::map(&file)? };
         let storage = Arc::new(Storage::Mmap(memmap));
+        Abf::from_storage(storage, path)
+    }
+
+    /// Parses ABF data already resident in memory, without touching the
+    /// filesystem.
+    ///
+    /// Unlike [`Abf::from_file`], this does not memory-map anything and
+    /// contains no `unsafe` code, so it works in contexts with no filesystem
+    /// access (e.g. WebAssembly) or when the bytes come from the network
+    /// rather than a local file. [`Abf::path`] returns an empty path on the
+    /// result, since there is no file it was opened from.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Abf::from_file`], except
+    /// [`AbfError::Io`] never occurs (there is no file to open).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rust_abf::Abf;
+    ///
+    /// let bytes = std::fs::read("tests/test_abf/18425108.abf").unwrap();
+    /// let abf = Abf::from_bytes(bytes).unwrap();
+    /// assert_eq!(abf.channel_count(), 2);
+    /// ```
+    pub fn from_bytes(bytes: impl Into<Arc<[u8]>>) -> Result<Abf, AbfError> {
+        let storage = Arc::new(Storage::Owned(bytes.into()));
+        Abf::from_storage(storage, PathBuf::new())
+    }
+
+    fn from_storage(storage: Arc<Storage>, path: PathBuf) -> Result<Abf, AbfError> {
         let signature = byte_reader::ByteReader::new(storage.bytes())
             .read_str("file_signature", 0, 4)
             .ok();
@@ -246,7 +278,8 @@ impl Abf {
         self.sampling_rate()
     }
 
-    /// The filesystem path this `Abf` was opened from.
+    /// The filesystem path this `Abf` was opened from, or an empty path if
+    /// it was constructed with [`Abf::from_bytes`].
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
