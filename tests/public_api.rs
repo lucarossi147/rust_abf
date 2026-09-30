@@ -58,6 +58,15 @@ fn public_api_surface_compiles_and_behaves() {
 
     let _: Vec<_> = abf.channels().collect();
 
+    for sweep_index in 0..abf.sweep_count() {
+        let all: Vec<Vec<f32>> = abf.sweep_all_channels(sweep_index).expect("in range");
+        let mut buffers: Vec<Vec<f32>> = abf.channels().map(|c| vec![0.0; c.sweep_len()]).collect();
+        abf.read_sweep_all_channels_into(sweep_index, &mut buffers)
+            .expect("valid buffers");
+        assert_eq!(all, buffers);
+    }
+    let _ = Abf::SINGLE_PASS_MIN_BYTES;
+
     let err: AbfError = Abf::from_file(Path::new("tests/test_abf/wrong_signature.abf"))
         .expect_err("wrong signature is an error");
     match err {
@@ -68,6 +77,10 @@ fn public_api_surface_compiles_and_behaves() {
         | AbfError::InvalidSection { .. }
         | AbfError::Unsupported(_)
         | AbfError::SweepOutOfRange { .. }
-        | AbfError::BufferLengthMismatch { .. } => {}
+        | AbfError::BufferLengthMismatch { .. }
+        | AbfError::ChannelCountMismatch { .. } => {}
+        // `AbfError` is `#[non_exhaustive]`: downstream matches need a
+        // wildcard so new variants aren't a breaking change.
+        _ => {}
     }
 }

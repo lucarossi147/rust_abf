@@ -181,3 +181,56 @@ via `git stash`) vs. after (new API), same machine, back-to-back:
 Criterion reported "No change in performance detected" (p > 0.05) for every
 benchmark. `cargo llvm-cov --fail-under-lines 80` reports 96.31% total line
 coverage after this change.
+
+## Before / after 0.6.0 (fast decode, all-channels API, `parallel` feature)
+
+0.6.0 validates a sweep's whole byte range once and de-interleaves with fixed-stride,
+vectorised kernels, adds `Abf::sweep_all_channels` / `Abf::read_sweep_all_channels_into`,
+and adds the optional `parallel` feature. Measured by the maintainer's agent on a
+different machine than the sections above (2-vCPU Intel Xeon @ 2.10GHz cloud VM,
+rustc 1.95.0), so compare within this table only:
+`cargo bench --bench read -- --warm-up-time 1 --measurement-time 3`.
+
+| Benchmark | Fixture | 0.5.0 | 0.6.0 | 0.6.0 + `parallel` |
+| --- | --- | --- | --- | --- |
+| `open` | `14o08011_ic_pair` | 17.4 µs | 15.6 µs | 16.5 µs |
+| `open` | `18425108` | 18.0 µs | 16.3 µs | 16.3 µs |
+| `read_all_sweeps_f32` | `14o08011_ic_pair` | 5.13 ms | 1.73 ms | 2.10 ms |
+| `read_all_sweeps_f32` | `18425108` | 697 µs | 142 µs | — |
+| `read_all_sweeps_raw` | `14o08011_ic_pair` | 3.15 ms | 0.91 ms | 1.10 ms |
+| `read_all_sweeps_raw` | `18425108` | 432 µs | 105 µs | 99 µs |
+| `read_all_sweeps_into` | `14o08011_ic_pair` | 4.76 ms | 1.28 ms | 1.26 ms |
+| `read_all_sweeps_into` | `18425108` | 643 µs | 141 µs | 158 µs |
+| `read_all_channels_into` (new) | `14o08011_ic_pair` | n/a | 0.97 ms | 1.02 ms |
+| `read_all_channels_into` (new) | `18425108` | n/a | 122 µs | 120 µs |
+| `sweep_all_channels` (new) | `14o08011_ic_pair` | n/a | 5.94 ms | 5.60 ms |
+| `sweep_all_channels` (new) | `18425108` | n/a | 165 µs | 172 µs |
+| `sweep_iter` (copy via zip) | `14o08011_ic_pair` | 6.14 ms | 4.86 ms | 5.25 ms |
+| `sweep_iter` (copy via zip) | `18425108` | 836 µs | 700 µs | 787 µs |
+
+(`—`: not captured.)
+
+- **Decode speed-up (~3-4.5x).** The wins on `read_all_sweeps_*` come from validating the
+  sweep's byte range once instead of a computed offset and fallible bounds check per
+  sample, and from fixed-stride kernels the compiler can vectorise.
+- **`read_all_channels_into`** beats a loop of per-channel `read_sweep_into` calls by
+  ~20-25% because it reads the interleaved data once instead of once per channel.
+- **`sweep_all_channels`** on the 7.2 MB fixture is dominated by allocating two fresh
+  2.4 MB `Vec`s per sweep. With glibc, freeing both at once returns their pages to the OS,
+  so every call page-faults again (a standalone microbenchmark with no decoding at all
+  reproduced this: 5.3 ms allocating both buffers vs 1.1 ms allocating one at a time).
+  For repeated reads prefer `read_sweep_all_channels_into` with reused buffers.
+- **`parallel`.** These numbers were taken with a 512K-sample threshold, before it was
+  raised to 1,048,576. On this 2-vCPU VM it was neutral-to-slower on these fixtures, while
+  a standalone microbenchmark of the decode kernel showed parallel wins from ~1M samples
+  (1M: 376 → 239 µs with a reused buffer; 4M: 2.13 → 0.94 ms; 20M: 24.2 → 8.6 ms), hence
+  the final threshold. With it, neither fixture's sweeps (600K and 250K samples) are
+  parallelised.
+- **Iterators.** `sweep_iter`/`raw_sweep_iter` are bound by the consumer (here a sequential
+  `f32` add chain), so they are roughly at parity with 0.5.0. A buffered-block iterator
+  variant was tried and was slower. Use `read_sweep_into` for throughput.
+
+### Peak memory
+
+`tests/memory.rs` asserts 0 bytes allocated for both `read_sweep_into` and
+`read_sweep_all_channels_into` loops with reused buffers. `open` peaks are unchanged.

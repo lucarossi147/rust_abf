@@ -1,6 +1,6 @@
 [package]
 name = "rust_abf"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 rust-version = "1.66"
 license = "MIT"
@@ -18,12 +18,25 @@ exclude = ["tests/test_abf/*", "tests/golden/*", "scripts/*", ".github/*", "benc
 
 [dependencies]
 memmap2 = "0.9.11"
+# Optional: multi-threaded decoding of large sweeps (see the `parallel` feature).
+# 1.10 is the last rayon line whose MSRV (1.63) fits this crate's rust-version.
+rayon = { version = "1.10", optional = true }
+
+[features]
+default = []
+# Decode large sweeps on rayon's global thread pool in the allocating read
+# APIs (`Channel::sweep`, `Channel::raw_sweep`, `Abf::sweep_all_channels`).
+# The `*_into` APIs stay single-threaded and allocation-free either way.
+parallel = ["dep:rayon"]
 
 [dev-dependencies]
 criterion = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [[bench]]
 name = "read"

@@ -6,6 +6,9 @@ use std::io;
 /// Every variant is produced by validated, bounds-checked parsing: malformed
 /// or truncated input always yields one of these instead of panicking.
 ///
+/// The enum is `#[non_exhaustive]`: new variants may be added in minor
+/// releases, so `match`es on it need a wildcard arm.
+///
 /// # Examples
 ///
 /// ```
@@ -17,6 +20,7 @@ use std::io;
 /// println!("{err}"); // implements `Display` and `std::error::Error`
 /// ```
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum AbfError {
     /// Failed to open or read the file.
     Io(io::Error),
@@ -57,6 +61,14 @@ pub enum AbfError {
         /// The output buffer's actual length.
         actual: usize,
     },
+    /// `Abf::read_sweep_all_channels_into` was given a number of output
+    /// buffers different from the file's channel count.
+    ChannelCountMismatch {
+        /// The file's channel count, i.e. the number of buffers expected.
+        expected: usize,
+        /// The number of output buffers actually passed.
+        actual: usize,
+    },
 }
 
 impl fmt::Display for AbfError {
@@ -87,6 +99,10 @@ impl fmt::Display for AbfError {
             AbfError::BufferLengthMismatch { expected, actual } => write!(
                 f,
                 "output buffer length {actual} does not match sweep length {expected}"
+            ),
+            AbfError::ChannelCountMismatch { expected, actual } => write!(
+                f,
+                "got {actual} output buffer(s) but the file has {expected} channel(s)"
             ),
         }
     }
@@ -161,6 +177,14 @@ mod tests {
             }
             .to_string(),
             "output buffer length 4 does not match sweep length 10"
+        );
+        assert_eq!(
+            AbfError::ChannelCountMismatch {
+                expected: 2,
+                actual: 1
+            }
+            .to_string(),
+            "got 1 output buffer(s) but the file has 2 channel(s)"
         );
     }
 

@@ -5,7 +5,8 @@
 //! allocator doesn't affect any other test binary.
 //!
 //! Run with `cargo test --test memory -- --nocapture` to see the printed numbers.
-//! There are no thresholds (yet) — this just establishes a baseline (see BENCHMARKS.md).
+//! Measurements are per-thread (see `tests/common/alloc_counter.rs`), so the tests can
+//! safely run in parallel. Apart from the thresholds below, this just establishes a baseline (see BENCHMARKS.md).
 
 #[path = "common/alloc_counter.rs"]
 mod alloc_counter;
@@ -13,27 +14,9 @@ mod alloc_counter;
 use alloc_counter::{peak_bytes_during, CountingAllocator};
 use rust_abf::Abf;
 use std::path::Path;
-use std::sync::Mutex;
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator::new();
-
-// The allocator above tracks a single, process-wide byte count: an
-// allocation on *any* thread bumps the same counter, regardless of which
-// thread's measured section is currently running. So it's not enough to
-// serialize the individual `peak_bytes_during` calls (any allocation by the
-// *other* test running concurrently in between would still be attributed to
-// whichever measurement happens to be in progress) — the two `#[test]`
-// functions in this binary must not run concurrently at all, since `cargo
-// test` otherwise runs them in parallel by default. Each test holds this
-// mutex for its entire body to guarantee that.
-static MEASURE_LOCK: Mutex<()> = Mutex::new(());
-
-fn lock_measurements() -> std::sync::MutexGuard<'static, ()> {
-    MEASURE_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
 
 // ABF1 fixture is excluded: ABF1 parsing is not implemented yet (`Abf::from_file` panics on it).
 const FIXTURES: &[&str] = &[
@@ -48,7 +31,6 @@ const MAX_OPEN_PEAK_BYTES: usize = 64 * 1024;
 
 #[test]
 fn opening_a_file_does_not_copy_sample_data_onto_the_heap() {
-    let _guard = lock_measurements();
     for fixture in FIXTURES {
         let path = Path::new(fixture);
         let (_abf, open_peak_bytes) =
@@ -65,35 +47,53 @@ fn opening_a_file_does_not_copy_sample_data_onto_the_heap() {
 /// should not allocate at all after the buffer itself is allocated.
 #[test]
 fn read_sweep_into_does_not_allocate_after_the_buffer_is_reused() {
-    let _guard = lock_measurements();
     for fixture in FIXTURES {
         let path = Path::new(fixture);
         let abf = Abf::from_file(path).unwrap();
 
         for channel in abf.channels() {
             let mut buf = vec![0.0f32; channel.sweep_len()];
-            // `peak_bytes_during` reports an absolute high-water mark, which
-            // starts at whatever is already allocated (here, `buf` itself).
-            // Capture that starting point with a no-op call, so the
-            // assertion below checks that the read loop allocates nothing
-            // *beyond* the reused buffer, rather than nothing at all.
-            let (_, baseline) = peak_bytes_during(&ALLOCATOR, || {});
+            // `peak_bytes_during` counts only this thread's allocations made
+            // inside the closure (baseline 0), so `buf` itself, allocated
+            // beforehand, is not included: the read loop must allocate nothing.
             let (_, peak_bytes) = peak_bytes_during(&ALLOCATOR, || {
                 for sweep in 0..abf.sweep_count() {
                     channel.read_sweep_into(sweep, &mut buf).unwrap();
                 }
             });
             assert_eq!(
-                peak_bytes, baseline,
-                "{fixture}: read_sweep_into peak bytes = {peak_bytes}, expected no more than the {baseline}-byte baseline"
+                peak_bytes, 0,
+                "{fixture}: read_sweep_into peak bytes = {peak_bytes}, expected 0"
             );
         }
     }
 }
 
+/// `Abf::read_sweep_all_channels_into` with reused buffers must not allocate
+/// on either decode strategy (and never spawns threads, even with `parallel`).
+#[test]
+fn read_sweep_all_channels_into_does_not_allocate_after_the_buffers_are_reused() {
+    for fixture in FIXTURES {
+        let path = Path::new(fixture);
+        let abf = Abf::from_file(path).unwrap();
+        let mut bufs: Vec<Vec<f32>> = abf
+            .channels()
+            .map(|c| vec![0.0f32; c.sweep_len()])
+            .collect();
+        let (_, peak_bytes) = peak_bytes_during(&ALLOCATOR, || {
+            for sweep in 0..abf.sweep_count() {
+                abf.read_sweep_all_channels_into(sweep, &mut bufs).unwrap();
+            }
+        });
+        assert_eq!(
+            peak_bytes, 0,
+            "{fixture}: read_sweep_all_channels_into peak bytes = {peak_bytes}, expected 0"
+        );
+    }
+}
+
 #[test]
 fn prints_peak_bytes_per_fixture() {
-    let _guard = lock_measurements();
     for fixture in FIXTURES {
         let path = Path::new(fixture);
 

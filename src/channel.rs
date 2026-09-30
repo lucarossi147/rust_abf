@@ -1,3 +1,4 @@
+use crate::decode::{decode, le_f32, le_i16, EitherIter, StridedIter};
 use crate::error::AbfError;
 use crate::storage::Storage;
 use std::fmt;
@@ -200,40 +201,74 @@ impl Channel {
         self.file_kind()
     }
 
-    /// Absolute byte offset of this channel's `per_channel_index`-th sample
-    /// (0-indexed, across all sweeps concatenated).
-    fn sample_byte_offset(&self, per_channel_index: usize) -> usize {
-        self.data_offset
-            + (per_channel_index * self.channel_count + self.channel_index)
-                * self.file_kind.sample_width()
+    /// Distance in bytes between two consecutive samples of this channel.
+    pub(crate) fn stride(&self) -> usize {
+        self.channel_count
+            .saturating_mul(self.file_kind.sample_width())
     }
 
-    /// Decodes the raw int16 sample at `per_channel_index` from `bytes`
-    /// (obtained once per sweep via `self.storage.bytes()` by the caller, so
-    /// the backing storage's variant is only dispatched on once per sweep
-    /// rather than once per sample), or `0` if the computed offset somehow
-    /// falls outside `bytes`. The latter should not happen for a `Channel`
-    /// built from validated section metadata, but decoding never panics
-    /// either way.
-    fn read_i16(&self, bytes: &[u8], per_channel_index: usize) -> i16 {
-        let offset = self.sample_byte_offset(per_channel_index);
-        bytes
-            .get(offset..offset + 2)
-            .and_then(|b| <[u8; 2]>::try_from(b).ok())
-            .map(i16::from_le_bytes)
-            .unwrap_or(0)
+    /// The bytes spanning this channel's samples of `sweep`: starting at its
+    /// first sample and ending right after its last one, with consecutive
+    /// samples [`Channel::stride`] bytes apart.
+    ///
+    /// The whole range is validated here, once per sweep, with checked
+    /// arithmetic, so the decode loops need no per-sample bounds checks and a
+    /// corrupt header can never overflow or panic. Returns `None` if the
+    /// range overflows or runs past the end of the data (a truncated file);
+    /// callers then yield zeros for the whole sweep.
+    fn sweep_bytes<'a>(&self, bytes: &'a [u8], sweep: usize) -> Option<&'a [u8]> {
+        let width = self.file_kind.sample_width();
+        let stride = self.channel_count.checked_mul(width)?;
+        let start = self
+            .sweep_len
+            .checked_mul(sweep)?
+            .checked_mul(stride)?
+            .checked_add(self.data_offset)?
+            .checked_add(self.channel_index.checked_mul(width)?)?;
+        let len = match self.sweep_len.checked_sub(1) {
+            None => 0,
+            Some(n) => n.checked_mul(stride)?.checked_add(width)?,
+        };
+        bytes.get(start..start.checked_add(len)?)
     }
 
-    /// Decodes the raw float32 sample at `per_channel_index` from `bytes`,
-    /// or `0.0` if the computed offset somehow falls outside `bytes` (see
-    /// [`Channel::read_i16`]).
-    fn read_f32(&self, bytes: &[u8], per_channel_index: usize) -> f32 {
-        let offset = self.sample_byte_offset(per_channel_index);
-        bytes
-            .get(offset..offset + 4)
-            .and_then(|b| <[u8; 4]>::try_from(b).ok())
-            .map(f32::from_le_bytes)
-            .unwrap_or(0.0)
+    /// [`Channel::sweep_bytes`] for this channel's own storage, or an empty
+    /// slice if the range is invalid.
+    fn sweep_src(&self, sweep: usize) -> Option<&[u8]> {
+        self.sweep_bytes(self.storage.bytes(), sweep)
+    }
+
+    /// Byte range of *all* channels' frames for `sweep` (used by the
+    /// single-pass multi-channel decoder in [`crate::Abf`]).
+    pub(crate) fn frames_bytes(&self, sweep: usize) -> Option<&[u8]> {
+        let stride = self.stride();
+        let start = self
+            .sweep_len
+            .checked_mul(sweep)?
+            .checked_mul(stride)?
+            .checked_add(self.data_offset)?;
+        let len = self.sweep_len.checked_mul(stride)?;
+        self.storage.bytes().get(start..start.checked_add(len)?)
+    }
+
+    /// Decodes `sweep` (already range-checked) into `out` (already exactly
+    /// `sweep_len` long) in physical units. `allow_par` lets allocating
+    /// callers use the `parallel` feature; allocation-free callers pass
+    /// `false`. A truncated or corrupt data range decodes as all zeros.
+    pub(crate) fn decode_sweep_unchecked(&self, sweep: usize, out: &mut [f32], allow_par: bool) {
+        let Some(src) = self.sweep_src(sweep) else {
+            out.fill(0.0);
+            return;
+        };
+        let stride = self.stride();
+        let (gain, offset) = (self.gain, self.offset);
+        let scale = move |c: &[u8]| le_i16(c) as f32 * gain + offset;
+        match (self.file_kind, allow_par) {
+            (FileKind::I16, true) => crate::parallel::decode_maybe_par(src, stride, out, scale),
+            (FileKind::I16, false) => decode(src, stride, out, scale),
+            (FileKind::F32, true) => crate::parallel::decode_maybe_par(src, stride, out, le_f32),
+            (FileKind::F32, false) => decode(src, stride, out, le_f32),
+        }
     }
 
     /// Returns the raw, unscaled int16 samples for a sweep.
@@ -244,7 +279,14 @@ impl Channel {
     /// returns `None` for them.
     #[must_use]
     pub fn raw_sweep(&self, sweep: usize) -> Option<Vec<i16>> {
-        Some(self.raw_sweep_iter(sweep)?.collect())
+        if sweep >= self.sweeps_count || self.file_kind != FileKind::I16 {
+            return None;
+        }
+        let mut out = vec![0i16; self.sweep_len];
+        if let Some(src) = self.sweep_src(sweep) {
+            crate::parallel::decode_maybe_par(src, self.stride(), &mut out, le_i16);
+        }
+        Some(out)
     }
 
     /// Deprecated alias for [`Channel::raw_sweep`].
@@ -263,7 +305,7 @@ impl Channel {
             return None;
         }
         let mut out = vec![0.0f32; self.sweep_len];
-        self.read_sweep_into(sweep, &mut out).ok()?;
+        self.decode_sweep_unchecked(sweep, &mut out, true);
         Some(out)
     }
 
@@ -311,20 +353,7 @@ impl Channel {
                 actual: out.len(),
             });
         }
-        let start = self.sweep_len * sweep;
-        let bytes = self.storage.bytes();
-        match self.file_kind {
-            FileKind::I16 => {
-                for (j, o) in out.iter_mut().enumerate() {
-                    *o = self.read_i16(bytes, start + j) as f32 * self.gain + self.offset;
-                }
-            }
-            FileKind::F32 => {
-                for (j, o) in out.iter_mut().enumerate() {
-                    *o = self.read_f32(bytes, start + j);
-                }
-            }
-        }
+        self.decode_sweep_unchecked(sweep, out, false);
         Ok(())
     }
 
@@ -338,14 +367,25 @@ impl Channel {
         if sweep >= self.sweeps_count {
             return None;
         }
-        let start = self.sweep_len * sweep;
-        let bytes = self.storage.bytes();
-        Some(
-            (start..start + self.sweep_len).map(move |j| match self.file_kind {
-                FileKind::I16 => self.read_i16(bytes, j) as f32 * self.gain + self.offset,
-                FileKind::F32 => self.read_f32(bytes, j),
-            }),
-        )
+        // A truncated or corrupt range decodes as silence (0.0), like
+        // `read_sweep_into`: missing samples read as raw 0, so the scaling
+        // must be zeroed too or they would come out as `offset`.
+        let (src, gain, offset) = match self.sweep_src(sweep) {
+            Some(src) => (src, self.gain, self.offset),
+            None => (&[][..], 0.0, 0.0),
+        };
+        let (stride, len) = (self.stride(), self.sweep_len);
+        Some(match self.file_kind {
+            FileKind::I16 => EitherIter::Left(StridedIter::<_, _, 2>::new(
+                src,
+                stride,
+                len,
+                move |c: &[u8]| le_i16(c) as f32 * gain + offset,
+            )),
+            FileKind::F32 => {
+                EitherIter::Right(StridedIter::<_, _, 4>::new(src, stride, len, le_f32))
+            }
+        })
     }
 
     /// Returns a lazy iterator over a sweep's raw, unscaled int16 samples,
@@ -358,9 +398,13 @@ impl Channel {
         if sweep >= self.sweeps_count || self.file_kind != FileKind::I16 {
             return None;
         }
-        let start = self.sweep_len * sweep;
-        let bytes = self.storage.bytes();
-        Some((start..start + self.sweep_len).map(move |j| self.read_i16(bytes, j)))
+        let src = self.sweep_src(sweep).unwrap_or(&[]);
+        Some(StridedIter::<_, _, 2>::new(
+            src,
+            self.stride(),
+            self.sweep_len,
+            le_i16,
+        ))
     }
 
     /// Returns an iterator over every sweep in physical units, in order
@@ -708,5 +752,258 @@ mod tests {
         assert_eq!(ch1.raw_sweep(0).unwrap(), vec![-1, -2, -3]);
         assert_eq!(ch0.index(), 0);
         assert_eq!(ch1.index(), 1);
+    }
+
+    // ---- multi-channel / runtime-stride / truncation / overflow ----
+
+    fn owned_storage(bytes: Vec<u8>) -> Arc<Storage> {
+        Arc::new(Storage::Owned(Arc::from(bytes)))
+    }
+
+    fn layout(
+        storage: &Arc<Storage>,
+        data_offset: usize,
+        channel_index: usize,
+        channel_count: usize,
+        samples_per_channel: usize,
+        file_kind: FileKind,
+    ) -> ChannelLayout {
+        ChannelLayout {
+            storage: storage.clone(),
+            data_offset,
+            channel_index,
+            channel_count,
+            samples_per_channel,
+            file_kind,
+        }
+    }
+
+    fn i16_bytes(values: &[i16]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    fn f32_bytes(values: &[f32]) -> Vec<u8> {
+        values.iter().flat_map(|v| v.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn three_channel_i16_runtime_stride_deinterleaves_every_api() {
+        // 3 channels, 2 sweeps of 5 samples: 30 interleaved values.
+        let per_channel = |c: usize| -> Vec<i16> {
+            (0..10)
+                .map(|j| (c as i16 + 1) * 100 + j as i16 - 4)
+                .collect()
+        };
+        let mut values = Vec::new();
+        for j in 0..10 {
+            for c in 0..3 {
+                values.push(per_channel(c)[j]);
+            }
+        }
+        let storage = owned_storage(i16_bytes(&values));
+        for c in 0..3usize {
+            let (gain, offset) = (0.5 + c as f32, -1.25 * (c as f32 + 1.0));
+            let ch = Channel::new(
+                layout(&storage, 0, c, 3, 10, FileKind::I16),
+                None,
+                gain,
+                offset,
+                None,
+                2,
+            );
+            assert_eq!(ch.stride(), 6);
+            assert_eq!(ch.sweep_len(), 5);
+            let expected_raw = per_channel(c);
+            for s in 0..2 {
+                let raw = &expected_raw[s * 5..(s + 1) * 5];
+                let scaled: Vec<f32> = raw.iter().map(|&v| v as f32 * gain + offset).collect();
+                assert_eq!(ch.raw_sweep(s).unwrap(), raw);
+                assert_eq!(ch.sweep(s).unwrap(), scaled);
+                let mut buf = [f32::NAN; 5];
+                ch.read_sweep_into(s, &mut buf).unwrap();
+                assert_eq!(buf.to_vec(), scaled);
+                let it = ch.sweep_iter(s).unwrap();
+                assert_eq!(it.len(), 5);
+                assert_eq!(it.collect::<Vec<_>>(), scaled);
+                let it = ch.raw_sweep_iter(s).unwrap();
+                assert_eq!(it.len(), 5);
+                assert_eq!(it.collect::<Vec<_>>(), raw);
+            }
+        }
+    }
+
+    #[test]
+    fn three_channel_f32_stride_12_deinterleaves_every_api() {
+        let per_channel =
+            |c: usize| -> Vec<f32> { (0..6).map(|j| (c as f32 + 1.0) * 10.5 - j as f32).collect() };
+        let mut values = Vec::new();
+        for j in 0..6 {
+            for c in 0..3 {
+                values.push(per_channel(c)[j]);
+            }
+        }
+        let storage = owned_storage(f32_bytes(&values));
+        for c in 0..3usize {
+            // gain/offset must be ignored for float data.
+            let ch = Channel::new(
+                layout(&storage, 0, c, 3, 6, FileKind::F32),
+                None,
+                3.0,
+                99.0,
+                None,
+                2,
+            );
+            assert_eq!(ch.stride(), 12);
+            let exp = per_channel(c);
+            for s in 0..2 {
+                let want = &exp[s * 3..(s + 1) * 3];
+                assert_eq!(ch.raw_sweep(s), None);
+                assert!(ch.raw_sweep_iter(s).is_none());
+                assert_eq!(ch.sweep(s).unwrap(), want);
+                let mut buf = [f32::NAN; 3];
+                ch.read_sweep_into(s, &mut buf).unwrap();
+                assert_eq!(buf, *want);
+                let it = ch.sweep_iter(s).unwrap();
+                assert_eq!(it.len(), 3);
+                assert_eq!(it.collect::<Vec<_>>(), want);
+            }
+        }
+    }
+
+    #[test]
+    fn data_offset_and_channel_index_are_honoured() {
+        // 3 junk bytes, then 2 channels interleaved.
+        let mut bytes = vec![0xAA, 0xBB, 0xCC];
+        bytes.extend(i16_bytes(&[1, -1, 2, -2, 3, -3]));
+        let storage = owned_storage(bytes);
+        let ch1 = Channel::new(
+            layout(&storage, 3, 1, 2, 3, FileKind::I16),
+            None,
+            1.0,
+            0.0,
+            None,
+            1,
+        );
+        assert_eq!(ch1.raw_sweep(0).unwrap(), vec![-1, -2, -3]);
+    }
+
+    #[test]
+    fn truncated_data_yields_zeros_for_the_incomplete_sweep() {
+        // Claims 2 sweeps x 4 samples, but the bytes stop one byte short of
+        // covering sweep 1's last sample.
+        let mut bytes = i16_bytes(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        bytes.pop();
+        let storage = owned_storage(bytes);
+        let ch = Channel::new(
+            layout(&storage, 0, 0, 1, 8, FileKind::I16),
+            None,
+            2.0,
+            0.0,
+            None,
+            2,
+        );
+        assert_eq!(ch.sweep_len(), 4);
+        assert_eq!(ch.raw_sweep(0).unwrap(), vec![1, 2, 3, 4]);
+        assert_eq!(ch.sweep(0).unwrap(), vec![2.0, 4.0, 6.0, 8.0]);
+
+        assert_eq!(ch.sweep(1).unwrap(), vec![0.0; 4]);
+        assert_eq!(ch.raw_sweep(1).unwrap(), vec![0; 4]);
+        let mut buf = [7.0f32; 4];
+        ch.read_sweep_into(1, &mut buf).unwrap();
+        assert_eq!(buf, [0.0; 4]);
+        let it = ch.sweep_iter(1).unwrap();
+        assert_eq!(it.len(), 4);
+        assert_eq!(it.collect::<Vec<_>>(), vec![0.0; 4]);
+        let it = ch.raw_sweep_iter(1).unwrap();
+        assert_eq!(it.len(), 4);
+        assert_eq!(it.collect::<Vec<_>>(), vec![0; 4]);
+    }
+
+    #[test]
+    fn truncated_multi_channel_f32_yields_zeros() {
+        // 2 channels, 1 sweep of 3 frames claimed, only 2 frames present.
+        let storage = owned_storage(f32_bytes(&[1.0, -1.0, 2.0, -2.0]));
+        for c in 0..2 {
+            let ch = Channel::new(
+                layout(&storage, 0, c, 2, 3, FileKind::F32),
+                None,
+                1.0,
+                0.0,
+                None,
+                1,
+            );
+            assert_eq!(ch.sweep(0).unwrap(), vec![0.0; 3]);
+            let mut buf = [5.0f32; 3];
+            ch.read_sweep_into(0, &mut buf).unwrap();
+            assert_eq!(buf, [0.0; 3]);
+            assert_eq!(ch.sweep_iter(0).unwrap().collect::<Vec<_>>(), vec![0.0; 3]);
+        }
+    }
+
+    #[test]
+    fn huge_data_offset_does_not_overflow_or_panic() {
+        let storage = owned_storage(i16_bytes(&[1, 2, 3, 4]));
+        let ch = Channel::new(
+            layout(&storage, usize::MAX - 1, 0, 1, 4, FileKind::I16),
+            None,
+            1.0,
+            0.0,
+            None,
+            1,
+        );
+        let mut buf = [9.0f32; 4];
+        ch.read_sweep_into(0, &mut buf).unwrap();
+        assert_eq!(buf, [0.0; 4]);
+        let it = ch.sweep_iter(0).unwrap();
+        assert_eq!(it.len(), 4);
+        assert_eq!(it.collect::<Vec<_>>(), vec![0.0; 4]);
+        assert_eq!(ch.raw_sweep(0).unwrap(), vec![0; 4]);
+        assert_eq!(
+            ch.raw_sweep_iter(0).unwrap().collect::<Vec<_>>(),
+            vec![0; 4]
+        );
+    }
+
+    #[test]
+    fn huge_channel_count_does_not_overflow_or_panic() {
+        let storage = owned_storage(i16_bytes(&[1, 2, 3, 4]));
+        for (kind, index) in [(FileKind::I16, 1), (FileKind::F32, usize::MAX / 2 - 1)] {
+            let ch = Channel::new(
+                layout(&storage, 0, index, usize::MAX / 2, 4, kind),
+                None,
+                1.0,
+                0.0,
+                None,
+                2,
+            );
+            for s in 0..2 {
+                let mut buf = [9.0f32; 2];
+                ch.read_sweep_into(s, &mut buf).unwrap();
+                assert_eq!(buf, [0.0; 2]);
+                let it = ch.sweep_iter(s).unwrap();
+                assert_eq!(it.len(), 2);
+                assert_eq!(it.collect::<Vec<_>>(), vec![0.0; 2]);
+            }
+        }
+    }
+
+    // BUG (reported, not fixed): on a truncated/invalid range `sweep_iter`
+    // decodes the missing samples as raw 0 and then applies gain/offset, so it
+    // yields `offset` instead of 0.0, unlike `sweep`/`read_sweep_into`.
+    #[test]
+    fn truncated_i16_sweep_iter_is_zero_even_with_nonzero_offset() {
+        let mut bytes = i16_bytes(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        bytes.pop();
+        let storage = owned_storage(bytes);
+        let ch = Channel::new(
+            layout(&storage, 0, 0, 1, 8, FileKind::I16),
+            None,
+            2.0,
+            1.0,
+            None,
+            2,
+        );
+        assert_eq!(ch.sweep(1).unwrap(), vec![0.0; 4]);
+        assert_eq!(ch.sweep_iter(1).unwrap().collect::<Vec<_>>(), vec![0.0; 4]);
     }
 }

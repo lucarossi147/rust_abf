@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-30
+
+- **Breaking:** `AbfError` is now `#[non_exhaustive]`; exhaustive `match`es on it need a
+  `_` arm. This lets future releases add variants without another breaking change.
+- Added `AbfError::ChannelCountMismatch { expected, actual }`, returned by
+  `Abf::read_sweep_all_channels_into` when the number of output buffers differs from
+  `Abf::channel_count()`.
+- Faster decoding: `Channel` now validates a sweep's whole byte range once (with checked
+  arithmetic) and de-interleaves with fixed-stride, vectorisable kernels (1/2/4/8 channels
+  for `i16`, 1/2/4 channels for `f32`, runtime-stride fallback otherwise) instead of
+  computing an offset and doing a fallible bounds check per sample. `read_sweep_into`,
+  `sweep`, `raw_sweep` and `read_all_sweeps_*` are roughly 3-4.5x faster on the bundled
+  fixtures; `raw_sweep` no longer goes through the per-sample iterator. `sweep_iter` and
+  `raw_sweep_iter` use the same validated range but stay at parity with 0.5.0, since
+  iterator consumers dominate; prefer `read_sweep_into` for throughput. See `BENCHMARKS.md`.
+- **Behavior change:** if a sweep's data range is truncated or its offset arithmetic
+  overflows, the whole sweep now decodes as zeros (previously only the out-of-range
+  samples were zero). Still no panics.
+- Added `Abf::sweep_all_channels(sweep) -> Option<Vec<Vec<f32>>>` and the allocation-free
+  `Abf::read_sweep_all_channels_into(sweep, &mut [B])` (`B: AsMut<[f32]>`), which decode
+  every channel of a sweep at once. When at least two channels share a sweep length and the
+  sweep is at least `Abf::SINGLE_PASS_MIN_BYTES` (new public constant, 256 KiB), they use a
+  single-pass, cache-blocked de-interleave that reads the interleaved data once instead of
+  once per channel (~20-25% faster than per-channel `read_sweep_into` loops); otherwise
+  they fall back to per-channel reads. Results are bit-identical to per-channel reads.
+- Added optional Cargo feature `parallel` (optional dependency `rayon = "1.10"`): the
+  allocating APIs (`Channel::sweep`, `Channel::raw_sweep`, `Abf::sweep_all_channels`) decode
+  sweeps of at least 1,048,576 samples on rayon's thread pool. `read_sweep_into` and
+  `read_sweep_all_channels_into` always stay single-threaded and allocation-free. rayon
+  1.11+ needs a newer rustc than this crate's `rust-version` (1.66); on old toolchains pin
+  `rayon = "=1.10"` in your lockfile. Off by default; `memmap2` remains the only default
+  dependency.
+- Tests and benches: the allocation counter in `tests/memory.rs` is now per-thread, fixing
+  a flaky `read_sweep_into_does_not_allocate...` test under the multi-threaded harness; new
+  tests for 3-channel strides, truncation, overflow and the all-channels paths
+  (`tests/all_channels.rs`); `benches/read.rs` gained `read_all_channels_into`,
+  `sweep_all_channels` and `sweep_iter`. `Cargo.toml` sets
+  `[package.metadata.docs.rs] all-features = true`.
+
 - Owned-buffer constructor (issue [14]): added `Abf::from_bytes(impl Into<Arc<[u8]>>) ->
   Result<Abf, AbfError>`, which parses ABF data already resident in memory instead of
   memory-mapping a file. It uses no `unsafe` code, so it works in contexts without

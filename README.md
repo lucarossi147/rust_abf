@@ -6,7 +6,7 @@ Molecular Devices' pCLAMP/AxoScope software and commonly used in electrophysiolo
 - **Correct data**: format semantics are matched against [pyABF](https://github.com/swharden/pyABF), the reference implementation.
 - **No panics on any input**: malformed or truncated files return a typed [`AbfError`](https://docs.rs/rust_abf/latest/rust_abf/enum.AbfError.html) instead of panicking.
 - **Low memory**: files are memory-mapped and decoded lazily; opening a file allocates a small, file-size-independent amount instead of copying the whole file.
-- **Minimal dependencies**: `memmap2` is the crate's only runtime dependency.
+- **Minimal dependencies**: `memmap2` is the crate's only runtime dependency by default; `rayon` is optional, behind the `parallel` feature.
 
 Currently only ABF2 files are supported; ABF1 files are recognized but return
 `Err(AbfError::UnsupportedVersion(_))`.
@@ -15,7 +15,7 @@ Currently only ABF2 files are supported; ABF1 files are recognized but return
 
 ```toml
 [dependencies]
-rust_abf = "0.5"
+rust_abf = "0.6"
 ```
 
 or `cargo add rust_abf`.
@@ -117,6 +117,46 @@ peak memory use independent of the file's size, but it also means:
       // `buffer` is reused for every sweep instead of allocating a new `Vec` each time.
   }
   ```
+
+## Reading every channel at once
+
+[`Abf::read_sweep_all_channels_into`] decodes all channels of a sweep into caller-supplied
+buffers, one per channel, without allocating. Reuse the buffers across sweeps:
+
+```rust
+use rust_abf::Abf;
+use std::path::Path;
+
+let abf = Abf::from_file(Path::new("tests/test_abf/14o08011_ic_pair.abf")).unwrap();
+let mut buffers: Vec<Vec<f32>> = abf
+    .channels()
+    .map(|channel| vec![0.0f32; channel.sweep_len()])
+    .collect();
+for sweep_index in 0..abf.sweep_count() {
+    abf.read_sweep_all_channels_into(sweep_index, &mut buffers).unwrap();
+    // `buffers[c]` now holds channel `c`'s samples for this sweep.
+}
+```
+
+When at least two channels share a sweep length and a sweep is at least
+[`Abf::SINGLE_PASS_MIN_BYTES`] (256 KiB), the interleaved data is read once in a
+cache-blocked pass instead of once per channel; otherwise each channel is read separately.
+The choice is automatic and the results are bit-identical. [`Abf::sweep_all_channels`] is the
+allocating equivalent and returns `Option<Vec<Vec<f32>>>`.
+
+## Optional parallel decoding
+
+```toml
+[dependencies]
+rust_abf = { version = "0.6", features = ["parallel"] }
+```
+
+With the `parallel` feature, the allocating APIs ([`Channel::sweep`], [`Channel::raw_sweep`]
+and [`Abf::sweep_all_channels`]) decode sweeps of at least 1,048,576 samples on
+[rayon](https://crates.io/crates/rayon)'s thread pool. It does not affect the `*_into`
+APIs, which stay single-threaded and allocation-free, nor the iterators, nor smaller
+sweeps. rayon 1.11+ needs a newer rustc than this crate's MSRV (1.66); on an old toolchain,
+pin `rayon` to 1.10.
 
 ## Float vs. int16 samples
 

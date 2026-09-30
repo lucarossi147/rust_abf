@@ -72,11 +72,71 @@ fn bench_read_all_sweeps_into(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_read_all_channels_into(c: &mut Criterion) {
+    let mut group = c.benchmark_group("read_all_channels_into");
+    for fixture in FIXTURES {
+        let abf = Abf::from_file(Path::new(fixture)).unwrap();
+        group.bench_function(*fixture, |b| {
+            let mut buffers: Vec<Vec<f32>> = abf
+                .channels()
+                .map(|c| vec![0.0f32; c.sweep_len()])
+                .collect();
+            b.iter(|| {
+                for sweep in 0..abf.sweep_count() {
+                    abf.read_sweep_all_channels_into(sweep, &mut buffers)
+                        .unwrap();
+                    black_box(&buffers);
+                }
+            });
+        });
+    }
+    group.finish();
+}
+
+fn bench_sweep_all_channels(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sweep_all_channels");
+    for fixture in FIXTURES {
+        let abf = Abf::from_file(Path::new(fixture)).unwrap();
+        group.bench_function(*fixture, |b| {
+            b.iter(|| {
+                for sweep in 0..abf.sweep_count() {
+                    black_box(abf.sweep_all_channels(sweep).unwrap());
+                }
+            });
+        });
+    }
+    group.finish();
+}
+
+fn bench_sweep_iter(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sweep_iter");
+    for fixture in FIXTURES {
+        let abf = Abf::from_file(Path::new(fixture)).unwrap();
+        group.bench_function(*fixture, |b| {
+            b.iter(|| {
+                for channel in abf.channels() {
+                    let mut buf = vec![0.0f32; channel.sweep_len()];
+                    for sweep in 0..abf.sweep_count() {
+                        for (o, x) in buf.iter_mut().zip(channel.sweep_iter(sweep).unwrap()) {
+                            *o = x;
+                        }
+                        black_box(&buf);
+                    }
+                }
+            });
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_open,
     bench_read_all_sweeps_f32,
     bench_read_all_sweeps_raw,
-    bench_read_all_sweeps_into
+    bench_read_all_sweeps_into,
+    bench_read_all_channels_into,
+    bench_sweep_all_channels,
+    bench_sweep_iter
 );
 criterion_main!(benches);
