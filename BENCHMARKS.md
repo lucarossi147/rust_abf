@@ -7,7 +7,8 @@ changes, and compare against these numbers — see the performance guard in `CLA
 (no regressions greater than 5% without justification).
 
 Only the two ABF2 fixtures are exercised. `05210017_vc_abf1.abf` is an ABF1 file and
-`Abf::from_file` does not support ABF1 yet ([20]), so it would panic.
+`Abf::from_file` does not support ABF1 yet ([20]): it returns
+`Err(AbfError::UnsupportedVersion(_))`.
 
 ## Machine
 
