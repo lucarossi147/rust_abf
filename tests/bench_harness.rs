@@ -7,8 +7,8 @@
 mod common;
 
 use common::{
-    bench_file, parse_caches, parse_mb_list, run_case, skip_reason, synth_file, Backend,
-    Cache, Case, Config, SynthMode,
+    bench_file, parse_caches, parse_mb_list, run_case, skip_reason, synth_file, Backend, Cache,
+    Case, Config, SynthMode,
 };
 use rust_abf::Abf;
 use std::ffi::OsString;
@@ -51,10 +51,8 @@ fn config_defaults_and_file_list() {
     assert_eq!(cfg.buf_max_mb, 512);
 
     let joined = std::env::join_paths(["a/one.abf", "b/two.abf"]).unwrap();
-    let cfg = Config::from_lookup(|key| {
-        (key == "RUST_ABF_BENCH_FILES").then(|| joined.clone())
-    })
-    .unwrap();
+    let cfg =
+        Config::from_lookup(|key| (key == "RUST_ABF_BENCH_FILES").then(|| joined.clone())).unwrap();
     assert_eq!(cfg.files.len(), 2);
     assert!(cfg.files[1].ends_with("two.abf"));
 
@@ -73,15 +71,27 @@ fn synthetic_gap_free_file_opens_as_one_sweep() {
     assert_eq!(abf.sweep_count(), 1);
     let samples = abf.channel(0).unwrap().sweep_len() as u64 * 2;
     let data_bytes = samples * 2;
-    assert!(data_bytes <= 1 << 20 && data_bytes > (1 << 20) - 4, "{data_bytes}");
+    assert!(
+        data_bytes <= 1 << 20 && data_bytes > (1 << 20) - 4,
+        "{data_bytes}"
+    );
     // Not sparse: real non-zero data.
-    assert!(abf.channel(0).unwrap().raw_sweep(0).unwrap().iter().any(|&v| v != 0));
+    assert!(abf
+        .channel(0)
+        .unwrap()
+        .raw_sweep(0)
+        .unwrap()
+        .iter()
+        .any(|&v| v != 0));
 
     // Reused, not regenerated.
     let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
     let again = synth_file(dir.path(), 1, SynthMode::GapFree).unwrap();
     assert_eq!(again, path);
-    assert_eq!(std::fs::metadata(&again).unwrap().modified().unwrap(), modified);
+    assert_eq!(
+        std::fs::metadata(&again).unwrap().modified().unwrap(),
+        modified
+    );
 }
 
 #[test]
@@ -91,7 +101,10 @@ fn synthetic_episodic_file_has_one_second_sweeps() {
     let abf = Abf::from_file(&path).unwrap();
     assert_eq!(abf.channel_count(), 2);
     assert!(abf.sweep_count() > 1, "{}", abf.sweep_count());
-    assert_eq!(abf.channel(0).unwrap().sweep_len(), abf.sampling_rate() as usize);
+    assert_eq!(
+        abf.channel(0).unwrap().sweep_len(),
+        abf.sampling_rate() as usize
+    );
 }
 
 #[test]
@@ -120,14 +133,24 @@ fn skips_cases_that_do_not_apply() {
 
     let skip = |case, backend, file, cfg| skip_reason(case, backend, file, cfg).is_some();
     assert!(skip(Case::RandomSweeps, Backend::FromFile, &gap_free, &cfg));
-    assert!(!skip(Case::RandomSweeps, Backend::FromFile, &episodic, &cfg));
+    assert!(!skip(
+        Case::RandomSweeps,
+        Backend::FromFile,
+        &episodic,
+        &cfg
+    ));
     assert!(!skip(Case::ReadAllInto, Backend::FromFile, &gap_free, &cfg));
 
     let tight = config(&[
         ("RUST_ABF_BENCH_BUF_MAX_MB", "0"),
         ("RUST_ABF_BENCH_OWNED_MAX_MB", "0"),
     ]);
-    assert!(skip(Case::ReadAllInto, Backend::FromFile, &gap_free, &tight));
+    assert!(skip(
+        Case::ReadAllInto,
+        Backend::FromFile,
+        &gap_free,
+        &tight
+    ));
     assert!(skip(Case::Open, Backend::FromBytes, &gap_free, &tight));
     assert!(!skip(Case::Open, Backend::FromFile, &gap_free, &tight));
 }
