@@ -22,18 +22,39 @@ impl Section<'_, StringsSectionType> {
 }
 
 /// Splits the first strings-section entry into its indexed strings.
+///
+/// Index positions follow pyABF exactly (`src/pyabf/abf2/stringsSection.py`,
+/// `StringsSection.__init__`, lines 36-42): start at the **last** `\0\0`,
+/// split on `\0`, drop the first piece and keep empty entries, so header
+/// indices such as `lADCUnitsIndex` address the result directly.
+///
+/// Decoding deliberately deviates from pyABF: each byte is read as Latin-1
+/// (byte value = code point), so `0xB5 0x56` is `"µV"`. pyABF rewrites
+/// `0xB5` to `u` and replaces other non-ASCII bytes. Whitespace is trimmed
+/// like Python's `str.strip()` on ASCII; Latin-1 NBSP (`0xA0`) is kept.
 fn parse_indexed_strings(bytes: &[u8]) -> IndexedStrings {
-    let res: Vec<String> = bytes
-        .split(|c| *c == 0u8)
-        .map(String::from_utf8_lossy)
-        .filter(|str_i| !str_i.is_empty())
-        .map(|str_i| str_i.trim().to_string())
+    // Python `bytes.rfind` returns -1 when absent, and `b[-1:]` is the last
+    // byte (or empty for empty input).
+    let start = bytes
+        .windows(2)
+        .rposition(|w| w == b"\0\0")
+        .unwrap_or_else(|| bytes.len().saturating_sub(1));
+    let strings = bytes
+        .get(start..)
+        .unwrap_or_default()
+        .split(|&b| b == 0)
+        .skip(1)
+        .map(|s| {
+            let latin1: String = s.iter().copied().map(char::from).collect();
+            latin1.trim_matches(is_python_ascii_space).to_string()
+        })
         .collect();
-    // The first 3 strings are reserved (file comment / ADC comment path /
-    // protocol path); a malformed file with fewer than 3 just yields no
-    // indexed strings instead of panicking.
-    let indexed = res.get(3..).unwrap_or(&[]).to_vec();
-    IndexedStrings::new(indexed)
+    IndexedStrings::new(strings)
+}
+
+/// ASCII characters for which Python's `str.isspace()` is true.
+fn is_python_ascii_space(c: char) -> bool {
+    matches!(c, '\t'..='\r' | '\x1c'..='\x1f' | ' ')
 }
 
 #[cfg(test)]
