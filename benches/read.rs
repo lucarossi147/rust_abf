@@ -3,7 +3,8 @@ use rust_abf::Abf;
 use std::hint::black_box;
 use std::path::Path;
 
-// ABF1 fixture is excluded: ABF1 parsing is not implemented yet (`Abf::from_file` panics on it).
+// ABF1 fixture is excluded: ABF1 parsing is not implemented yet (`Abf::from_file` returns
+// `Err(AbfError::UnsupportedVersion(_))` for it).
 const FIXTURES: &[&str] = &[
     "tests/test_abf/14o08011_ic_pair.abf",
     "tests/test_abf/18425108.abf",

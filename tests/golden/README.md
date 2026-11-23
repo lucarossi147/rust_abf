@@ -37,21 +37,13 @@ can still open. Commit the diff. CI (the `golden` job) re-runs this script and
 fails with `git diff --exit-code tests/golden` if the committed JSON is stale
 relative to the fixtures.
 
-## Known-wrong behaviour
+## Ignored tests
 
-Some golden assertions describe the *correct* behaviour per pyABF but
-currently fail against rust_abf. These are marked `#[ignore = "fixed by
+Some golden assertions describe the *correct* behaviour per pyABF but cannot
+pass against rust_abf yet. These are marked `#[ignore = "fixed by
 #<issue>"]` in `tests/golden.rs` so the fix for that issue is just removing
 the `#[ignore]`:
 
 - `golden_abf1_05210017` — ABF1 support is not implemented yet
-  (`Abf::from_file` hits a `todo!()` for the `"ABF "` signature); see
-  `[20] ABF1 support`.
-- `golden_time_axis_matches_pyabf_for_multi_sweep_file` —
-  `Abf::get_time_axis()` divides by `sweeps_count` twice for multi-sweep
-  files, since `get_sweep_in_channel` already returns per-sweep data; see
-  `[2] get_time_axis() is wrong for multi-sweep files`.
-- `golden_get_channels_preserves_adc_order` — `Abf::get_channels()` iterates
-  a `HashMap`, so channel order is not guaranteed to match ADC order (and is
-  not stable across runs, since Rust randomizes the hasher seed per process);
-  see `[1] get_channels() returns channels in random order`.
+  (`Abf::from_file` returns `Err(AbfError::UnsupportedVersion(_))` for the
+  `"ABF "` signature); see `[20] ABF1 support`.

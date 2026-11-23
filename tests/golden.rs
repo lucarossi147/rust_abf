@@ -164,7 +164,7 @@ fn golden_14o08011_ic_pair() {
 }
 
 #[test]
-#[ignore = "fixed by #25 ([20] ABF1 support): Abf::from_file panics (todo!()) on the \"ABF \" signature"]
+#[ignore = "fixed by #25 ([20] ABF1 support): Abf::from_file returns Err(UnsupportedVersion) on the \"ABF \" signature"]
 fn golden_abf1_05210017() {
     check_against_golden("tests/test_abf/05210017_vc_abf1.abf", "05210017_vc_abf1");
 }

@@ -1,6 +1,6 @@
 # CLAUDE.md — rules for agents working on rust_abf
 
-rust_abf reads Axon Binary Format (ABF) electrophysiology files. Target: 0.5.0, production ready.
+rust_abf reads Axon Binary Format (ABF) electrophysiology files. Current: 0.6.0; target: production ready.
 Goals, in order: correct data, no panics on any input, low memory, speed.
 
 ## How work is organised
@@ -32,15 +32,20 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all-targets
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
-cargo llvm-cov --fail-under-lines 80   # once [F1] is merged
-cargo bench                            # once [F3] is merged
+cargo llvm-cov --fail-under-lines 80
+cargo bench                            # compare against BENCHMARKS.md
 ```
 
-## Codebase map (0.4.4)
+## Codebase map (0.6.0)
 
-- `src/lib.rs` — `Abf` public type, `from_file`, accessors
+- `src/lib.rs` — `Abf` public type, `from_file` / `from_bytes`, accessors, all-channels API
+- `src/error.rs` — `AbfError` (every fallible API returns `Result<_, AbfError>`)
 - `src/abf_v2.rs` — ABF2 header parsing, builds channels
-- `src/abf_v2/section/*` — typed section readers (protocol, ADC, DAC, strings, data)
-- `src/channel.rs` — `Channel` (per-channel samples, scaling)
-- `src/conversion_util.rs` — little-endian byte readers
-- `tests/lib.rs`, fixtures in `tests/test_abf/`
+- `src/abf_v2/section.rs`, `src/abf_v2/section/*` — typed section readers (protocol, ADC, strings, synch array, data)
+- `src/byte_reader.rs` — bounds-checked little-endian `ByteReader`
+- `src/storage.rs` — `Storage`: file bytes (mmap or `Arc<[u8]>`) shared by all channels, decoded lazily
+- `src/channel.rs` — `Channel` (per-channel sweeps, scaling, `read_sweep_into`)
+- `src/decode.rs` — sample-decoding kernels (i16/f32, strided de-interleave)
+- `src/parallel.rs` — rayon-backed decoding behind the optional `parallel` feature
+- `tests/*.rs` (shared helpers in `tests/common/`), golden pyABF data in `tests/golden/`, fixtures in `tests/test_abf/`
+- `benches/read.rs` — Criterion benchmarks; baselines in `BENCHMARKS.md`
