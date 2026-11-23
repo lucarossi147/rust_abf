@@ -42,7 +42,7 @@ impl Abf {
             }
         }
 
-        let number_of_channels = adc_section.get_channel_count();
+        let number_of_channels = adc_section.get_channel_count()?;
         let data_layout = data_section.layout(number_of_channels, data_format)?;
         let adc_infos = adc_section.get_adc_infos()?;
 

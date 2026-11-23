@@ -19,6 +19,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Changed: names and units are decoded as Latin-1 instead of lossy UTF-8, so a `µV`
   unit is returned as `"µV"` instead of `"\u{FFFD}V"`. This deliberately differs from
   pyABF, which returns `"uV"`.
+- Fixed: ABF2 files larger than 4 GiB now open. Section offsets, sizes and counts use
+  64-bit arithmetic, and the section map's `llNumEntries` is read as the full `i64`
+  (previously only its low 32 bits, which silently truncated the sample count of
+  recordings with more than 2³² samples). A negative entry count is now
+  `AbfError::InvalidSection`. On 32-bit targets, a file whose offsets don't fit in
+  `usize` returns an error instead of truncating.
 
 ## [0.6.0] - 2026-09-30
 

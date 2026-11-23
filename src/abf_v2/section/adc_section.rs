@@ -105,7 +105,7 @@ impl Section<'_, AdcSectionType> {
             .collect()
     }
 
-    pub fn get_channel_count(&self) -> usize {
-        usize::try_from(self.item_count).unwrap_or(0)
+    pub fn get_channel_count(&self) -> Result<usize, AbfError> {
+        super::to_usize(self.item_count, "ADC channel count")
     }
 }
