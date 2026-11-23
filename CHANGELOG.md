@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- CI: `clippy`, `test` and `coverage` now run for both default features and `--all-features`
+  (so the `parallel` feature is built, tested and covered); added `golden`, `msrv`
+  (`cargo +1.66 check --lib`, with and without `parallel`), `package` (no `.abf`, < 100 KB),
+  `semver` (`cargo-semver-checks`, PRs only) and `deny` jobs, a manual `bench.yml`
+  and a tag-triggered `release.yml`; removed the stale `test2.yml`. Added `deny.toml`.
+  The workflow files are in the PR description for #47 (GitHub App permissions prevent
+  committing to `.github/workflows/`).
+
 ## [0.6.0] - 2026-09-30
 
 - **Breaking:** `AbfError` is now `#[non_exhaustive]`; exhaustive `match`es on it need a
