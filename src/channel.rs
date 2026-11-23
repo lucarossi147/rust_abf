@@ -135,6 +135,10 @@ impl Channel {
 
     /// The channel's unit of measurement (e.g. `"pA"`, `"mV"`), or `None` if
     /// the ABF file's string table has no entry for it.
+    ///
+    /// Strings are decoded as Latin-1, which is what the file stores, so a
+    /// micro sign comes back as `"µV"` (U+00B5). This deliberately differs
+    /// from pyABF, which reports `"uV"` and drops other non-ASCII bytes.
     #[must_use]
     pub fn uom(&self) -> Option<&str> {
         self.uom.as_deref()

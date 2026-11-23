@@ -13,6 +13,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and a tag-triggered `release.yml`; removed the stale `test2.yml`. Added `deny.toml`.
   The workflow files are in the PR description for #47 (GitHub App permissions prevent
   committing to `.github/workflows/`).
+- Fixed: channel names and units are looked up in the strings section exactly as pyABF
+  does (split from the last double NUL, keep empty entries). An empty string in the
+  table no longer shifts every later name/unit.
+- Changed: names and units are decoded as Latin-1 instead of lossy UTF-8, so a `µV`
+  unit is returned as `"µV"` instead of `"\u{FFFD}V"`. This deliberately differs from
+  pyABF, which returns `"uV"`.
 
 ## [0.6.0] - 2026-09-30
 
