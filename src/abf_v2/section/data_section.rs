@@ -1,4 +1,4 @@
-use super::{DataSectionType, Section};
+use super::{to_usize, DataSectionType, Section};
 use crate::channel::FileKind;
 use crate::error::AbfError;
 
@@ -47,38 +47,21 @@ impl Section<'_, DataSectionType> {
             return Ok(None);
         }
 
-        let total_bytes =
-            self.item_count
-                .checked_mul(self.byte_count)
-                .ok_or(AbfError::InvalidSection {
-                    section: SECTION,
-                    reason: "section size overflows u32".to_string(),
-                })?;
-        let to = self
-            .block_number
-            .checked_add(total_bytes)
+        let total_bytes = self
+            .item_count
+            .checked_mul(u64::from(self.byte_count))
             .ok_or(AbfError::InvalidSection {
                 section: SECTION,
-                reason: "section end overflows u32".to_string(),
+                reason: "section size overflows u64".to_string(),
             })?;
-        let from = usize::try_from(self.block_number).map_err(|_| AbfError::InvalidSection {
-            section: SECTION,
-            reason: "section start exceeds addressable range".to_string(),
-        })?;
-        let to = usize::try_from(to).map_err(|_| AbfError::InvalidSection {
-            section: SECTION,
-            reason: "section end exceeds addressable range".to_string(),
-        })?;
+        let from = self.start()?;
+        let len = to_usize(total_bytes, "data section size")?;
 
         // Validates that the section fits within the backing storage without
         // copying any of it: `read_bytes` returns a borrowed slice.
-        self.reader.read_bytes(SECTION, from, to - from)?;
+        self.reader.read_bytes(SECTION, from, len)?;
 
-        let total_items =
-            usize::try_from(self.item_count).map_err(|_| AbfError::InvalidSection {
-                section: SECTION,
-                reason: "item_count exceeds addressable range".to_string(),
-            })?;
+        let total_items = to_usize(self.item_count, "data section item count")?;
         let file_kind = if data_format == DATA_FORMAT_INT16 {
             FileKind::I16
         } else {
@@ -100,11 +83,11 @@ mod tests {
 
     #[test]
     fn layout_is_none_for_zero_channels() {
-        // A 12-byte section header: block_number=0, byte_count=2 (matching
+        // A 16-byte section-map entry: block index 0, byte_count=2 (matching
         // DATA_FORMAT_INT16's expected width), item_count=0. With
         // number_of_channels=0, `layout` must short circuit to `Ok(None)`
         // before doing any section-size validation.
-        let mut bytes = [0u8; 12];
+        let mut bytes = [0u8; 16];
         bytes[4..8].copy_from_slice(&2u32.to_le_bytes());
         let reader = crate::byte_reader::ByteReader::new(&bytes);
         let section = Section::<DataSectionType>::new(reader, 0, std::marker::PhantomData).unwrap();
@@ -163,6 +146,7 @@ mod tests {
     /// low half is 1 and one sample is present, so reading only 32 bits
     /// would silently report a 1-sample recording.
     #[test]
+    #[cfg(target_pointer_width = "64")]
     fn entry_count_high_bits_are_not_truncated() {
         let bytes = section_map(1, 2, (1 << 32) + 1, 512 - 16 + 2);
         let err = layout_of(&bytes).err().unwrap();

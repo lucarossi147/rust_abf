@@ -8,10 +8,7 @@ const SECTION: &str = "strings";
 
 impl Section<'_, StringsSectionType> {
     pub fn read_indexed_strings(&self) -> Result<IndexedStrings, AbfError> {
-        let from = usize::try_from(self.block_number).map_err(|_| AbfError::InvalidSection {
-            section: SECTION,
-            reason: "section start exceeds addressable range".to_string(),
-        })?;
+        let from = self.start()?;
         let len = usize::try_from(self.byte_count).map_err(|_| AbfError::InvalidSection {
             section: SECTION,
             reason: "byte_count exceeds addressable range".to_string(),

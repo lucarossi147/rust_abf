@@ -72,6 +72,14 @@ impl<'a> ByteReader<'a> {
         Ok(i32::from_le_bytes(bytes))
     }
 
+    pub fn read_i64(&self, section: &'static str, offset: usize) -> Result<i64, AbfError> {
+        let s = self.slice(section, offset, 8)?;
+        let bytes: [u8; 8] = s
+            .try_into()
+            .map_err(|_| AbfError::Truncated { section, offset })?;
+        Ok(i64::from_le_bytes(bytes))
+    }
+
     pub fn read_f32(&self, section: &'static str, offset: usize) -> Result<f32, AbfError> {
         let s = self.slice(section, offset, 4)?;
         let bytes: [u8; 4] = s
