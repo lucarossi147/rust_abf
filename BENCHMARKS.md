@@ -10,6 +10,59 @@ Only the two ABF2 fixtures are exercised. `05210017_vc_abf1.abf` is an ABF1 file
 `Abf::from_file` does not support ABF1 yet ([20]): it returns
 `Err(AbfError::UnsupportedVersion(_))`.
 
+Plain `cargo bench` also runs the storage benchmarks below on a 64 MB synthetic file,
+which adds a few minutes. To compare against the fixture numbers in this file,
+`cargo bench --bench read` is enough.
+
+## Storage-backend benchmarks ([34])
+
+`benches/storage.rs` (timing) and `benches/storage_memory.rs` (peak resident memory)
+compare how a file is opened (`from_file` vs `from_bytes`, and pread in [21]) on large
+files, in warm and cold cache, across access patterns. **Reference numbers come from the
+maintainer's Windows PC with real recordings**; `bench.yml` (manual trigger) runs them on
+Linux.
+
+### Running on Windows with your own recordings
+
+```powershell
+# Real files: a ;-separated list. Synthetic files are generated once into target\bench-data.
+$env:RUST_ABF_BENCH_FILES = "D:\recordings\long_gapfree.abf;D:\recordings\episodic.abf"
+$env:RUST_ABF_BENCH_SYNTH_MB = "1024"        # "" for none; e.g. "1024,6144"
+$env:RUST_ABF_BENCH_CACHE = "warm,cold"
+cargo bench --bench storage                  # Criterion output in target\criterion
+cargo bench --bench storage_memory           # table: target\bench-results\storage_memory.md
+```
+
+On Linux, use `export` and `:` as the separator. Optional knobs:
+- `RUST_ABF_BENCH_OWNED_MAX_MB` (default 2048): skip `from_bytes` for bigger files, because
+  it loads the whole file.
+- `RUST_ABF_BENCH_BUF_MAX_MB` (default 512): skip `read_all_into` when one sweep's `f32`
+  buffers are bigger. That happens with a long gap-free file, which is a single sweep;
+  windowed reads arrive with [27].
+
+Criterion filters work as usual, e.g. `cargo bench --bench storage -- stream_all`.
+
+The cases (`open`, `first_second`, `stream_all`, `read_all_into`, `random_sweeps`) are
+documented on `Case` in `benches/common/mod.rs`. Every iteration opens the file, so
+`cold` measures a real first access.
+
+How caches are dropped, without admin rights:
+- **Cold on Windows:** before each iteration, the file is opened and closed with
+  `FILE_FLAG_NO_BUFFERING`, which purges its cached pages. Checked on a 2 GB file: ~310 ms
+  warm vs ~600 ms after eviction.
+- **Cold on Linux:** `posix_fadvise(POSIX_FADV_DONTNEED)`.
+- **Memory:** each case runs once in a fresh child process that samples its resident
+  memory (RSS / working set) every 1 ms. Mapped file pages count, unlike in
+  `tests/memory.rs`.
+
+Under `cargo test --all-targets`, both benches run in smoke mode: a 1 MB synthetic file,
+warm and cold, and no result files written. This is the CI smoke check (`ci.yml`).
+
+### Results
+
+_To be recorded on the maintainer's Windows PC (Criterion means and
+`target\bench-results\storage_memory.md`, with the recording sizes and the disk)._
+
 ## Machine
 
 - CI runner equivalent (GitHub Actions `ubuntu-latest`-class VM): x86_64, 4 vCPUs, 15 GiB RAM

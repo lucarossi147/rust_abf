@@ -1,0 +1,40 @@
+name: Storage benchmarks
+
+# Manual run of the storage benchmarks (issue [34]) on Linux. Reference
+# numbers come from the maintainer's Windows machine; the smoke check runs
+# in ci.yml via `cargo test --all-targets`.
+on:
+  workflow_dispatch:
+    inputs:
+      synth_mb:
+        description: Synthetic file sizes in MB (comma separated)
+        default: "64,1024"
+      cache:
+        description: "warm, cold or warm,cold"
+        default: "warm,cold"
+      criterion_args:
+        description: Extra Criterion arguments (e.g. a filter)
+        default: "--warm-up-time 1 --measurement-time 2"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  storage:
+    runs-on: ubuntu-latest
+    env:
+      RUST_ABF_BENCH_SYNTH_MB: ${{ inputs.synth_mb }}
+      RUST_ABF_BENCH_CACHE: ${{ inputs.cache }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench --bench storage -- ${{ inputs.criterion_args }}
+      - run: cargo bench --bench storage_memory
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: storage-bench
+          path: |
+            target/bench-results
+            target/criterion
