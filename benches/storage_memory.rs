@@ -7,6 +7,7 @@
 //! (this binary re-executed with `--child`), which samples its own resident
 //! memory every millisecond. Prints a Markdown table and writes it to
 //! `target/bench-results/storage_memory.md`.
+#![forbid(unsafe_code)]
 
 mod common;
 

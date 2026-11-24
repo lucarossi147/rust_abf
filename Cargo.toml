@@ -17,7 +17,6 @@ exclude = ["tests/test_abf/*", "tests/golden/*", "scripts/*", ".github/*", "benc
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-memmap2 = "0.9.11"
 # Optional: multi-threaded decoding of large sweeps (see the `parallel` feature).
 # 1.10 is the last rayon line whose MSRV (1.63) fits this crate's rust-version.
 rayon = { version = "1.10", optional = true }

@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 #[cfg(test)]
 mod tests {
     use rust_abf::{self, Abf, AbfKind};

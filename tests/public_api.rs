@@ -2,6 +2,7 @@
 //! intended 0.5.0 public API item (and nothing deprecated), so an
 //! accidental widening of the public surface or a broken rename shows up as
 //! a compile failure here even if no other test happens to touch it.
+#![forbid(unsafe_code)]
 #![deny(deprecated)]
 
 use rust_abf::{Abf, AbfError, AbfKind};

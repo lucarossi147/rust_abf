@@ -67,100 +67,6 @@ pub(crate) fn decode<T, F: Fn(&[u8]) -> T>(src: &[u8], stride: usize, out: &mut 
     }
 }
 
-/// A lazy, exact-size iterator over `len` samples spaced `stride` bytes
-/// apart in `src`, each `W` bytes wide. If `src` is shorter than expected (a truncated data
-/// section), the missing samples decode as zero, so the iterator still
-/// yields exactly `len` items.
-pub(crate) struct StridedIter<'a, T, F, const W: usize> {
-    src: &'a [u8],
-    pos: usize,
-    stride: usize,
-    remaining: usize,
-    f: F,
-    _marker: std::marker::PhantomData<fn() -> T>,
-}
-
-impl<'a, T, F, const W: usize> StridedIter<'a, T, F, W> {
-    pub(crate) fn new(src: &'a [u8], stride: usize, len: usize, f: F) -> Self {
-        Self {
-            src,
-            pos: 0,
-            stride,
-            remaining: len,
-            f,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T, F: Fn(&[u8]) -> T, const W: usize> Iterator for StridedIter<'_, T, F, W> {
-    type Item = T;
-
-    #[inline]
-    fn next(&mut self) -> Option<T> {
-        if self.remaining == 0 {
-            return None;
-        }
-        self.remaining -= 1;
-        // Exactly `W` bytes (the sample width), or an empty slice past the
-        // end of `src`; a fixed-size window keeps this to one bounds check.
-        let end = self.pos.wrapping_add(W);
-        let item = (self.f)(self.src.get(self.pos..end).unwrap_or(&[]));
-        self.pos = self.pos.wrapping_add(self.stride);
-        Some(item)
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
-    }
-}
-
-impl<T, F: Fn(&[u8]) -> T, const W: usize> ExactSizeIterator for StridedIter<'_, T, F, W> {}
-
-/// One of two iterators with the same item type; lets
-/// [`crate::Channel::sweep_iter`] return a single concrete type for both
-/// sample widths while each variant keeps its own fixed-width decode.
-pub(crate) enum EitherIter<A, B> {
-    /// Iterator over `i16` samples.
-    Left(A),
-    /// Iterator over `f32` samples.
-    Right(B),
-}
-
-impl<T, A: Iterator<Item = T>, B: Iterator<Item = T>> Iterator for EitherIter<A, B> {
-    type Item = T;
-
-    #[inline]
-    fn next(&mut self) -> Option<T> {
-        match self {
-            EitherIter::Left(a) => a.next(),
-            EitherIter::Right(b) => b.next(),
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        match self {
-            EitherIter::Left(a) => a.size_hint(),
-            EitherIter::Right(b) => b.size_hint(),
-        }
-    }
-
-    #[inline]
-    fn fold<Acc, G: FnMut(Acc, T) -> Acc>(self, init: Acc, g: G) -> Acc {
-        match self {
-            EitherIter::Left(a) => a.fold(init, g),
-            EitherIter::Right(b) => b.fold(init, g),
-        }
-    }
-}
-
-impl<T, A: ExactSizeIterator<Item = T>, B: ExactSizeIterator<Item = T>> ExactSizeIterator
-    for EitherIter<A, B>
-{
-}
-
 /// Number of frames decoded per block by the single-pass, multi-channel
 /// decoder. One block of frames (`BLOCK_FRAMES * stride` bytes, i.e. 16 KiB
 /// for two `i16` channels) stays resident in L1 cache while every channel's
@@ -180,9 +86,8 @@ pub(crate) struct ChannelParams {
 }
 
 /// Single-pass de-interleave of consecutive frames (each `stride` bytes,
-/// one sample per channel) starting at `src[0]`, into one output buffer per
-/// channel (`outs[c]`, all the same length: the number of frames), with
-/// `params(c)` describing channel `c`.
+/// one sample per channel) starting at `src[0]`, into `outs[c][range]` for
+/// every channel `c`, with `params(c)` describing channel `c`.
 ///
 /// Frames are processed [`BLOCK_FRAMES`] at a time: each block is read from
 /// memory once and then served from cache while every channel's samples
@@ -194,19 +99,21 @@ pub(crate) fn decode_frames_blocked<B: AsMut<[f32]>>(
     stride: usize,
     is_f32: bool,
     outs: &mut [B],
+    range: std::ops::Range<usize>,
     params: impl Fn(usize) -> ChannelParams,
 ) {
-    let frames = outs.first_mut().map_or(0, |o| o.as_mut().len());
+    let frames = range.len();
     let mut first = 0;
     while first < frames {
         let n = BLOCK_FRAMES.min(frames - first);
         let block_start = first.saturating_mul(stride);
+        let to = range.start + first;
         for (c, out) in outs.iter_mut().enumerate() {
             let p = params(c);
             let Some(src_c) = src.get(block_start.saturating_add(p.offset_in_frame)..) else {
                 continue;
             };
-            let Some(out) = out.as_mut().get_mut(first..first + n) else {
+            let Some(out) = out.as_mut().get_mut(to..to + n) else {
                 continue;
             };
             if is_f32 {
@@ -259,14 +166,6 @@ mod tests {
     }
 
     #[test]
-    fn strided_iter_pads_a_truncated_source_with_defaults() {
-        let bytes = bytes_i16(&[5, 6, 7]);
-        let iter = StridedIter::<_, _, 2>::new(&bytes, 2, 5, le_i16);
-        assert_eq!(iter.len(), 5);
-        assert_eq!(iter.collect::<Vec<_>>(), vec![5, 6, 7, 0, 0]);
-    }
-
-    #[test]
     fn blocked_decode_matches_per_channel_decode_across_block_boundaries() {
         let channels = 3;
         let frames = BLOCK_FRAMES * 2 + 17;
@@ -275,10 +174,12 @@ mod tests {
             .collect();
         let bytes = bytes_i16(&values);
         let mut outs = vec![vec![0.0f32; frames]; channels];
-        decode_frames_blocked(&bytes, channels * 2, false, &mut outs, |c| ChannelParams {
-            offset_in_frame: c * 2,
-            gain: 0.5,
-            offset: c as f32,
+        decode_frames_blocked(&bytes, channels * 2, false, &mut outs, 0..frames, |c| {
+            ChannelParams {
+                offset_in_frame: c * 2,
+                gain: 0.5,
+                offset: c as f32,
+            }
         });
         for (c, out) in outs.iter().enumerate() {
             for (j, v) in out.iter().enumerate() {

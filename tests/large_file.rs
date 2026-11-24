@@ -6,6 +6,7 @@
 //! marker samples are written; the rest is a hole, so the file costs almost
 //! no disk space on filesystems with sparse-file support (ext4, APFS, NTFS
 //! once the sparse flag is set).
+#![forbid(unsafe_code)]
 #![cfg(target_pointer_width = "64")]
 
 use rust_abf::Abf;

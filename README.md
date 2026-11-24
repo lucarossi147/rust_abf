@@ -5,8 +5,9 @@ Molecular Devices' pCLAMP/AxoScope software and commonly used in electrophysiolo
 
 - **Correct data**: format semantics are matched against [pyABF](https://github.com/swharden/pyABF), the reference implementation.
 - **No panics on any input**: malformed or truncated files return a typed [`AbfError`](https://docs.rs/rust_abf/latest/rust_abf/enum.AbfError.html) instead of panicking.
-- **Low memory**: files are memory-mapped and decoded lazily; opening a file allocates a small, file-size-independent amount instead of copying the whole file.
-- **Minimal dependencies**: `memmap2` is the crate's only runtime dependency by default; `rayon` is optional, behind the `parallel` feature.
+- **Low memory**: sample data is read from disk and decoded on demand; opening a file reads only its header and metadata, and memory use does not grow with the file's size.
+- **No `unsafe`**: the crate is `#![forbid(unsafe_code)]`.
+- **Minimal dependencies**: no runtime dependencies by default; `rayon` is optional, behind the `parallel` feature.
 
 Currently only ABF2 files are supported; ABF1 files are recognized but return
 `Err(AbfError::UnsupportedVersion(_))`.
@@ -92,18 +93,20 @@ match Abf::from_file(Path::new("tests/test_abf/does_not_exist.abf")) {
 
 ## Memory model
 
-`Abf::from_file` memory-maps the file rather than reading it into a buffer, and does not
-copy or de-interleave sample data at open time. That makes opening a file cheap and its
-peak memory use independent of the file's size, but it also means:
+`Abf::from_file` reads only the header and metadata sections at open time. Sample data
+stays on disk: every read fetches just the bytes it needs, in chunks of up to 256 KiB,
+and decodes them. Opening a file is cheap and memory use does not grow with its size,
+even when every sample of a multi-GB recording is read. This also means:
 
-- The mapping must stay valid for as long as the `Abf` (or any `Channel` obtained from it,
-  since every `Channel` holds its own reference to the same mapping) is alive. Modifying or
-  truncating the file on disk while it is mapped is undefined behavior — see the safety
-  caveat on [`Abf::from_file`](https://docs.rs/rust_abf/latest/rust_abf/struct.Abf.html#method.from_file).
-- Sample data is decoded on demand. [`Channel::sweep`] and [`Channel::raw_sweep`] allocate a
-  fresh `Vec` per call; [`Channel::sweep_iter`] and [`Channel::raw_sweep_iter`] decode lazily
-  without allocating at all, and [`Channel::read_sweep_into`] decodes into a caller-supplied
-  buffer so it can be reused across repeated reads:
+- The file stays open for as long as the `Abf` (or any `Channel` obtained from it) is
+  alive. Modifying or truncating it in the meantime is safe but gives inconsistent data;
+  samples that can no longer be read come back as zeros.
+- For small files read many times, `Abf::from_bytes(std::fs::read(path)?)` keeps the whole
+  file in memory and decodes straight from it, without a system call per read.
+- [`Channel::sweep`] and [`Channel::raw_sweep`] allocate a fresh `Vec` per call;
+  [`Channel::sweep_iter`] and [`Channel::raw_sweep_iter`] allocate one 64 KiB buffer when
+  created and nothing while iterating; [`Channel::read_sweep_into`] decodes into a
+  caller-supplied buffer without allocating, so it can be reused across repeated reads:
 
   ```rust
   use rust_abf::Abf;

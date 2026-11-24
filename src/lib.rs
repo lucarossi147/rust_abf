@@ -1,8 +1,8 @@
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+#![forbid(unsafe_code)]
 
-use memmap2::Mmap;
 use std::{
     fmt,
     fs::File,
@@ -92,15 +92,17 @@ impl fmt::Debug for Abf {
 impl Abf {
     /// Opens and parses an ABF file.
     ///
-    /// The file is memory-mapped rather than read into memory, so sample
-    /// data is decoded lazily as sweeps are requested instead of being
-    /// copied onto the heap at open time.
+    /// Only the header and the metadata sections are read at open time.
+    /// Sample data stays on disk and is read and decoded on demand, with
+    /// positional reads, so peak memory does not depend on the file's size.
+    /// For small files that are read many times, [`Abf::from_bytes`] on the
+    /// whole file avoids the per-read system calls.
     ///
     /// # Errors
     ///
     /// Returns `Err` instead of panicking on any malformed or truncated
     /// input, in particular:
-    /// - [`AbfError::Io`] if the file cannot be opened or memory-mapped.
+    /// - [`AbfError::Io`] if the file cannot be opened or read.
     /// - [`AbfError::InvalidSignature`] if the first 4 bytes are not a
     ///   recognized ABF signature.
     /// - [`AbfError::UnsupportedVersion`] if the file is a legacy ABF1 file.
@@ -111,12 +113,11 @@ impl Abf {
     ///
     /// # Caveats
     ///
-    /// Because the file is memory-mapped, modifying or truncating it on disk
-    /// while the returned `Abf` (or any `Channel` obtained from it) is still
-    /// alive is undefined behavior: the mapping may be read concurrently
-    /// with the external write, with no synchronization between the two.
-    /// Callers must not write to a file while an `Abf` opened from it is in
-    /// use.
+    /// The file stays open while the returned `Abf` (or any `Channel`
+    /// obtained from it) is alive. Modifying or truncating it in the
+    /// meantime is never undefined behavior, but reads may then return
+    /// inconsistent data; samples that can no longer be read come back as
+    /// zeros.
     ///
     /// # Examples
     ///
@@ -130,18 +131,16 @@ impl Abf {
     pub fn from_file(filepath: &Path) -> Result<Abf, AbfError> {
         let path = PathBuf::from(filepath);
         let file = File::open(&path)?;
-        let memmap = unsafe { Mmap::map(&file)? };
-        let storage = Arc::new(Storage::Mmap(memmap));
+        let storage = Arc::new(Storage::open(file)?);
         Abf::from_storage(storage, path)
     }
 
     /// Parses ABF data already resident in memory, without touching the
     /// filesystem.
     ///
-    /// Unlike [`Abf::from_file`], this does not memory-map anything and
-    /// contains no `unsafe` code, so it works in contexts with no filesystem
-    /// access (e.g. WebAssembly) or when the bytes come from the network
-    /// rather than a local file. [`Abf::path`] returns an empty path on the
+    /// Use it when the bytes come from the network or another source rather
+    /// than a local file, or for small files read many times: sweeps are
+    /// then decoded straight from memory. [`Abf::path`] returns an empty path on the
     /// result, since there is no file it was opened from.
     ///
     /// # Errors
@@ -164,9 +163,7 @@ impl Abf {
     }
 
     fn from_storage(storage: Arc<Storage>, path: PathBuf) -> Result<Abf, AbfError> {
-        let signature = byte_reader::ByteReader::new(storage.bytes())
-            .read_str("file_signature", 0, 4)
-            .ok();
+        let signature = storage.header().read_str("file_signature", 0, 4).ok();
         match signature {
             Some("ABF2") => Abf::from_abf_v2(storage, path),
             Some("ABF ") => Err(AbfError::UnsupportedVersion("ABF1".to_string())),
@@ -388,15 +385,33 @@ impl Abf {
         let Some(first) = self.channels.first() else {
             return;
         };
-        let Some(src) = first.frames_bytes(sweep) else {
-            // Truncated or corrupt data section: silence, as per channel.
+        let frames = first.sweep_len();
+        if self
+            .decode_frames(frames.saturating_mul(sweep), frames, outs)
+            .is_err()
+        {
+            // Unreadable or corrupt data: silence, as per channel.
             outs.iter_mut().for_each(|out| out.as_mut().fill(0.0));
-            return;
+        }
+    }
+
+    /// Single-pass decode of frames `first..first + count` (counted across
+    /// sweeps) of every channel into `outs[c][..count]`.
+    fn decode_frames<B: AsMut<[f32]>>(
+        &self,
+        first: usize,
+        count: usize,
+        outs: &mut [B],
+    ) -> std::io::Result<()> {
+        let Some(ch) = self.channels.first() else {
+            return Ok(());
         };
-        let is_f32 = first.file_kind() == FileKind::F32;
-        decode::decode_frames_blocked(src, first.stride(), is_f32, outs, |c| {
-            self.channel_params(c)
-        });
+        let (stride, is_f32) = (ch.stride(), ch.file_kind() == FileKind::F32);
+        ch.for_each_chunk_of(first, count, 0, stride, |src, range| {
+            decode::decode_frames_blocked(src, stride, is_f32, outs, range, |c| {
+                self.channel_params(c)
+            });
+        })
     }
 
     /// Like [`Abf::decode_all_channels_seq`], but spreads the work across
@@ -421,12 +436,7 @@ impl Abf {
             self.decode_all_channels_seq(sweep, outs);
             return;
         }
-        let Some(src) = first.frames_bytes(sweep) else {
-            outs.iter_mut().for_each(|out| out.fill(0.0));
-            return;
-        };
-        let stride = first.stride();
-        let is_f32 = first.file_kind() == FileKind::F32;
+        let sweep_first = frames.saturating_mul(sweep);
         // tasks[k].1[c] = frames [k*range, (k+1)*range) of channel c
         let task_count = (frames + range - 1) / range;
         let mut tasks: Vec<(usize, Vec<&mut [f32]>)> = (0..task_count)
@@ -438,11 +448,10 @@ impl Abf {
             }
         }
         parallel::for_each_maybe_par(&mut tasks, |(k, pieces)| {
-            let start = k.saturating_mul(range).saturating_mul(stride);
-            if let Some(src_k) = src.get(start..) {
-                decode::decode_frames_blocked(src_k, stride, is_f32, pieces, |c| {
-                    self.channel_params(c)
-                });
+            let count = pieces.first().map_or(0, |p| p.len());
+            let first = sweep_first.saturating_add(k.saturating_mul(range));
+            if self.decode_frames(first, count, pieces).is_err() {
+                pieces.iter_mut().for_each(|p| p.fill(0.0));
             }
         });
     }
@@ -537,8 +546,8 @@ mod tests {
 
     fn empty_storage() -> Arc<Storage> {
         let file = tempfile::NamedTempFile::new().unwrap();
-        let mmap = unsafe { Mmap::map(file.as_file()).unwrap() };
-        Arc::new(Storage::Mmap(mmap))
+        let storage = Storage::open(file.reopen().unwrap()).unwrap();
+        Arc::new(storage)
     }
 
     fn abf_with_channels(channels: Vec<Channel>) -> Abf {

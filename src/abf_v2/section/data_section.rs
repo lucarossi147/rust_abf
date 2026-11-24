@@ -57,9 +57,8 @@ impl Section<'_, DataSectionType> {
         let from = self.start()?;
         let len = to_usize(total_bytes, "data section size")?;
 
-        // Validates that the section fits within the backing storage without
-        // copying any of it: `read_bytes` returns a borrowed slice.
-        self.reader.read_bytes(SECTION, from, len)?;
+        // The samples are read later, on demand; only check they exist.
+        self.reader.check_range(SECTION, from, len)?;
 
         let total_items = to_usize(self.item_count, "data section item count")?;
         let file_kind = if data_format == DATA_FORMAT_INT16 {

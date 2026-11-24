@@ -15,7 +15,7 @@ ignore = []
 
 [licenses]
 # Permissive licenses compatible with this crate's MIT license. This covers
-# the runtime graph (memmap2, libc, rayon and its crossbeam deps) and the
+# the runtime graph (rayon and its crossbeam deps, behind `parallel`) and the
 # dev-dependency graph (criterion, serde, tempfile, …).
 allow = [
     "MIT",

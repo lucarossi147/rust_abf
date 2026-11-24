@@ -1,6 +1,5 @@
 mod section;
 use super::{Abf, Channel};
-use crate::byte_reader::ByteReader;
 use crate::channel::ChannelLayout;
 use crate::error::AbfError;
 use crate::storage::Storage;
@@ -19,7 +18,7 @@ const EVENT_DRIVEN_VARIABLE_LENGTH: i16 = 1;
 impl Abf {
     pub(crate) fn from_abf_v2(storage: Arc<Storage>, path: PathBuf) -> Result<Self, AbfError> {
         let abf_kind = AbfKind::AbfV2;
-        let reader = ByteReader::new(storage.bytes());
+        let reader = storage.header();
         let actual_episodes = reader.read_u32(HEADER, 12)?;
         let data_format: u16 = reader.read_u16(HEADER, 30)?;
 

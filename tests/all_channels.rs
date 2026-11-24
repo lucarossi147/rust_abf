@@ -1,5 +1,6 @@
 //! `Abf::sweep_all_channels` and `Abf::read_sweep_all_channels_into` must
 //! agree exactly with the per-channel read APIs on the real fixtures.
+#![forbid(unsafe_code)]
 
 use rust_abf::Abf;
 use std::path::Path;

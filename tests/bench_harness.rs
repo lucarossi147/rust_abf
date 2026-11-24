@@ -2,6 +2,7 @@
 //! The benches themselves only run under `cargo bench`; these keep the
 //! helpers (config parsing, synthetic files, case selection, eviction)
 //! correct on every OS CI tests.
+#![forbid(unsafe_code)]
 
 #[path = "../benches/common/mod.rs"]
 mod common;
