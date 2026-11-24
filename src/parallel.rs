@@ -7,7 +7,7 @@
 //! thread, because rayon's thread pool allocates on first use and may grow
 //! its work queues later, which would break their zero-allocation guarantee.
 //!
-//! Without the feature, [`decode_maybe_par`] is just [`crate::decode::decode`].
+//! Without the feature, [`split_maybe_par`] reads on the calling thread.
 
 /// Sweeps shorter than this many samples are always decoded on the calling
 /// thread: below it, handing work to the pool costs more than it saves
@@ -20,39 +20,31 @@ pub(crate) const PAR_THRESHOLD: usize = 1024 * 1024;
 #[cfg(feature = "parallel")]
 const PAR_CHUNK: usize = 32 * 1024;
 
-/// Decodes `out.len()` samples spaced `stride` bytes apart from `src` (see
-/// [`crate::decode::decode`]), splitting the work across rayon's global
-/// thread pool when the `parallel` feature is enabled and the sweep is at
-/// least [`PAR_THRESHOLD`] samples long.
+/// Runs `read(first, out)`, which fills `out` with samples `first..`, split
+/// into pieces read on rayon's global thread pool when the `parallel`
+/// feature is enabled and `out` is at least [`PAR_THRESHOLD`] long.
 #[cfg(feature = "parallel")]
-pub(crate) fn decode_maybe_par<T, F>(src: &[u8], stride: usize, out: &mut [T], f: F)
+pub(crate) fn split_maybe_par<T, F>(first: usize, out: &mut [T], read: F) -> std::io::Result<()>
 where
     T: Send,
-    F: Fn(&[u8]) -> T + Sync + Send + Copy,
+    F: Fn(usize, &mut [T]) -> std::io::Result<()> + Sync,
 {
     use rayon::prelude::*;
     if out.len() < PAR_THRESHOLD {
-        crate::decode::decode(src, stride, out, f);
-        return;
+        return read(first, out);
     }
     out.par_chunks_mut(PAR_CHUNK)
         .enumerate()
-        .for_each(|(k, chunk)| {
-            let start = k.saturating_mul(PAR_CHUNK).saturating_mul(stride);
-            if let Some(src_k) = src.get(start..) {
-                crate::decode::decode(src_k, stride, chunk, f);
-            }
-        });
+        .try_for_each(|(k, piece)| read(first.saturating_add(k * PAR_CHUNK), piece))
 }
 
 /// Sequential fallback used when the `parallel` feature is disabled.
 #[cfg(not(feature = "parallel"))]
-#[inline(always)]
-pub(crate) fn decode_maybe_par<T, F>(src: &[u8], stride: usize, out: &mut [T], f: F)
+pub(crate) fn split_maybe_par<T, F>(first: usize, out: &mut [T], read: F) -> std::io::Result<()>
 where
-    F: Fn(&[u8]) -> T,
+    F: Fn(usize, &mut [T]) -> std::io::Result<()>,
 {
-    crate::decode::decode(src, stride, out, f);
+    read(first, out)
 }
 
 /// Length, in frames, of the ranges a single-pass multi-channel sweep decode
@@ -103,23 +95,27 @@ where
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use crate::decode::le_i16;
 
     #[test]
-    fn decode_maybe_par_matches_sequential_decode_for_large_inputs() {
+    fn split_maybe_par_reads_every_sample_at_its_index() {
         // Large enough to take the parallel path when the feature is on,
-        // with a ragged final chunk.
-        let channels = 2;
-        let frames = 2_500_003;
-        let bytes: Vec<u8> = (0..frames * channels)
-            .flat_map(|i| ((i % 60_000) as i16).to_le_bytes())
-            .collect();
-        let src = &bytes[2..];
-        let mut par = vec![0i16; frames];
-        let mut seq = vec![0i16; frames];
-        decode_maybe_par(src, channels * 2, &mut par, le_i16);
-        crate::decode::decode(src, channels * 2, &mut seq, le_i16);
-        assert_eq!(par, seq);
+        // with a ragged final piece.
+        let mut out = vec![0usize; 2_500_003];
+        split_maybe_par(7, &mut out, |first, piece| {
+            for (i, v) in piece.iter_mut().enumerate() {
+                *v = first + i;
+            }
+            Ok(())
+        })
+        .unwrap();
+        assert!(out.iter().enumerate().all(|(i, &v)| v == i + 7));
+    }
+
+    #[test]
+    fn split_maybe_par_reports_errors() {
+        let mut out = vec![0u8; 2_500_003];
+        let result = split_maybe_par(0, &mut out, |_, _| Err(std::io::ErrorKind::Other.into()));
+        assert!(result.is_err());
     }
 
     #[test]

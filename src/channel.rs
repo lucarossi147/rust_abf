@@ -1,7 +1,9 @@
-use crate::decode::{decode, le_f32, le_i16, EitherIter, StridedIter};
+use crate::decode::{decode, le_f32, le_i16};
 use crate::error::AbfError;
-use crate::storage::Storage;
+use crate::storage::{Storage, CHUNK_BYTES};
 use std::fmt;
+use std::io;
+use std::ops::Range;
 use std::sync::Arc;
 
 /// The on-disk sample representation of a channel, mirroring ABF2's `nDataFormat`
@@ -211,68 +213,94 @@ impl Channel {
             .saturating_mul(self.file_kind.sample_width())
     }
 
-    /// The bytes spanning this channel's samples of `sweep`: starting at its
-    /// first sample and ending right after its last one, with consecutive
-    /// samples [`Channel::stride`] bytes apart.
+    /// Reads `count` items spaced [`Channel::stride`] bytes apart, each
+    /// `width` bytes wide, the first one `in_frame` bytes into frame `first`
+    /// (frames are counted across sweeps). Calls `f(src, range)` once per
+    /// chunk read: `src` starts at item `range.start`.
     ///
-    /// The whole range is validated here, once per sweep, with checked
-    /// arithmetic, so the decode loops need no per-sample bounds checks and a
-    /// corrupt header can never overflow or panic. Returns `None` if the
-    /// range overflows or runs past the end of the data (a truncated file);
-    /// callers then yield zeros for the whole sweep.
-    fn sweep_bytes<'a>(&self, bytes: &'a [u8], sweep: usize) -> Option<&'a [u8]> {
-        let width = self.file_kind.sample_width();
-        let stride = self.channel_count.checked_mul(width)?;
-        let start = self
-            .sweep_len
-            .checked_mul(sweep)?
-            .checked_mul(stride)?
-            .checked_add(self.data_offset)?
-            .checked_add(self.channel_index.checked_mul(width)?)?;
-        let len = match self.sweep_len.checked_sub(1) {
-            None => 0,
-            Some(n) => n.checked_mul(stride)?.checked_add(width)?,
-        };
-        bytes.get(start..start.checked_add(len)?)
-    }
-
-    /// [`Channel::sweep_bytes`] for this channel's own storage, or an empty
-    /// slice if the range is invalid.
-    fn sweep_src(&self, sweep: usize) -> Option<&[u8]> {
-        self.sweep_bytes(self.storage.bytes(), sweep)
-    }
-
-    /// Byte range of *all* channels' frames for `sweep` (used by the
-    /// single-pass multi-channel decoder in [`crate::Abf`]).
-    pub(crate) fn frames_bytes(&self, sweep: usize) -> Option<&[u8]> {
+    /// With `in_frame` = this channel's offset and `width` = its sample
+    /// width the items are its samples; with `0` and the stride they are
+    /// whole frames. The range is computed with checked arithmetic, so a
+    /// corrupt header cannot overflow or panic.
+    pub(crate) fn for_each_chunk_of(
+        &self,
+        first: usize,
+        count: usize,
+        in_frame: usize,
+        width: usize,
+        mut f: impl FnMut(&[u8], Range<usize>),
+    ) -> io::Result<()> {
+        let invalid = || io::Error::from(io::ErrorKind::InvalidData);
         let stride = self.stride();
-        let start = self
-            .sweep_len
-            .checked_mul(sweep)?
-            .checked_mul(stride)?
-            .checked_add(self.data_offset)?;
-        let len = self.sweep_len.checked_mul(stride)?;
-        self.storage.bytes().get(start..start.checked_add(len)?)
+        let start = first
+            .checked_mul(stride)
+            .and_then(|b| b.checked_add(self.data_offset))
+            .and_then(|b| b.checked_add(in_frame))
+            .ok_or_else(invalid)?;
+        let Some(last) = count.checked_sub(1) else {
+            return Ok(());
+        };
+        let len = last
+            .checked_mul(stride)
+            .and_then(|b| b.checked_add(width))
+            .ok_or_else(invalid)?;
+        let per_chunk = (CHUNK_BYTES / stride.max(1)).max(1);
+        let mut done = 0;
+        let chunk_len = per_chunk.saturating_mul(stride);
+        self.storage.for_each_chunk(start, len, chunk_len, |src| {
+            let n = per_chunk.min(count.saturating_sub(done));
+            f(src, done..done + n);
+            done += n;
+        })
+    }
+
+    /// Decodes this channel's samples `first..first + out.len()` (counted
+    /// across sweeps) with `sample`, splitting the work across threads if
+    /// `allow_par` and the `parallel` feature allow it. If anything cannot
+    /// be read, `out` is filled with `T::default()` instead.
+    fn decode_into<T: Copy + Default + Send>(
+        &self,
+        first: usize,
+        out: &mut [T],
+        allow_par: bool,
+        sample: impl Fn(&[u8]) -> T + Copy + Send + Sync,
+    ) {
+        let (stride, width) = (self.stride(), self.file_kind.sample_width());
+        let in_frame = self.channel_index.saturating_mul(width);
+        let read = |first: usize, out: &mut [T]| {
+            self.for_each_chunk_of(first, out.len(), in_frame, width, |src, range| {
+                if let Some(piece) = out.get_mut(range) {
+                    decode(src, stride, piece, sample);
+                }
+            })
+        };
+        let result = if allow_par {
+            crate::parallel::split_maybe_par(first, out, read)
+        } else {
+            read(first, out)
+        };
+        if result.is_err() {
+            out.fill(T::default());
+        }
+    }
+
+    /// Decodes samples `first..first + out.len()` in physical units.
+    fn decode_scaled(&self, first: usize, out: &mut [f32], allow_par: bool) {
+        let (gain, offset) = (self.gain, self.offset);
+        match self.file_kind {
+            FileKind::I16 => self.decode_into(first, out, allow_par, move |c| {
+                le_i16(c) as f32 * gain + offset
+            }),
+            FileKind::F32 => self.decode_into(first, out, allow_par, le_f32),
+        }
     }
 
     /// Decodes `sweep` (already range-checked) into `out` (already exactly
     /// `sweep_len` long) in physical units. `allow_par` lets allocating
     /// callers use the `parallel` feature; allocation-free callers pass
-    /// `false`. A truncated or corrupt data range decodes as all zeros.
+    /// `false`. Data that cannot be read decodes as all zeros.
     pub(crate) fn decode_sweep_unchecked(&self, sweep: usize, out: &mut [f32], allow_par: bool) {
-        let Some(src) = self.sweep_src(sweep) else {
-            out.fill(0.0);
-            return;
-        };
-        let stride = self.stride();
-        let (gain, offset) = (self.gain, self.offset);
-        let scale = move |c: &[u8]| le_i16(c) as f32 * gain + offset;
-        match (self.file_kind, allow_par) {
-            (FileKind::I16, true) => crate::parallel::decode_maybe_par(src, stride, out, scale),
-            (FileKind::I16, false) => decode(src, stride, out, scale),
-            (FileKind::F32, true) => crate::parallel::decode_maybe_par(src, stride, out, le_f32),
-            (FileKind::F32, false) => decode(src, stride, out, le_f32),
-        }
+        self.decode_scaled(self.sweep_len.saturating_mul(sweep), out, allow_par);
     }
 
     /// Returns the raw, unscaled int16 samples for a sweep.
@@ -287,9 +315,7 @@ impl Channel {
             return None;
         }
         let mut out = vec![0i16; self.sweep_len];
-        if let Some(src) = self.sweep_src(sweep) {
-            crate::parallel::decode_maybe_par(src, self.stride(), &mut out, le_i16);
-        }
+        self.decode_into(self.sweep_len.saturating_mul(sweep), &mut out, true, le_i16);
         Some(out)
     }
 
@@ -364,50 +390,41 @@ impl Channel {
     /// Returns a lazy, scaled iterator over a sweep's samples in physical
     /// units, or `None` if `sweep` is out of range.
     ///
-    /// Each sample is decoded on demand as the iterator is advanced, so
-    /// consuming it (e.g. via `for`, `.sum()`, or `.zip(..)`) does not
-    /// allocate. See [`Channel::sweep`] for the scaling rules.
+    /// Samples are decoded 4096 at a time into a buffer the
+    /// iterator owns: creating it allocates that buffer once, advancing it
+    /// does not allocate. Samples that cannot be read come back as `0.0`.
+    /// See [`Channel::sweep`] for the scaling rules.
     pub fn sweep_iter(&self, sweep: usize) -> Option<impl ExactSizeIterator<Item = f32> + '_> {
         if sweep >= self.sweeps_count {
             return None;
         }
-        // A truncated or corrupt range decodes as silence (0.0), like
-        // `read_sweep_into`: missing samples read as raw 0, so the scaling
-        // must be zeroed too or they would come out as `offset`.
-        let (src, gain, offset) = match self.sweep_src(sweep) {
-            Some(src) => (src, self.gain, self.offset),
-            None => (&[][..], 0.0, 0.0),
-        };
-        let (stride, len) = (self.stride(), self.sweep_len);
-        Some(match self.file_kind {
-            FileKind::I16 => EitherIter::Left(StridedIter::<_, _, 2>::new(
-                src,
-                stride,
-                len,
-                move |c: &[u8]| le_i16(c) as f32 * gain + offset,
-            )),
-            FileKind::F32 => {
-                EitherIter::Right(StridedIter::<_, _, 4>::new(src, stride, len, le_f32))
-            }
-        })
+        let first = self.sweep_len.saturating_mul(sweep);
+        Some(ChunkedIter::new(
+            self,
+            first,
+            self.sweep_len,
+            |ch, first, out| {
+                ch.decode_scaled(first, out, false);
+            },
+        ))
     }
 
     /// Returns a lazy iterator over a sweep's raw, unscaled int16 samples,
     /// or `None` if `sweep` is out of range or the channel is float32 (see
-    /// [`Channel::raw_sweep`]).
-    ///
-    /// Each sample is decoded on demand as the iterator is advanced, so
-    /// consuming it does not allocate.
+    /// [`Channel::raw_sweep`]). Allocates like [`Channel::sweep_iter`];
+    /// samples that cannot be read come back as `0`.
     pub fn raw_sweep_iter(&self, sweep: usize) -> Option<impl ExactSizeIterator<Item = i16> + '_> {
         if sweep >= self.sweeps_count || self.file_kind != FileKind::I16 {
             return None;
         }
-        let src = self.sweep_src(sweep).unwrap_or(&[]);
-        Some(StridedIter::<_, _, 2>::new(
-            src,
-            self.stride(),
+        let first = self.sweep_len.saturating_mul(sweep);
+        Some(ChunkedIter::new(
+            self,
+            first,
             self.sweep_len,
-            le_i16,
+            |ch, first, out| {
+                ch.decode_into(first, out, false, le_i16);
+            },
         ))
     }
 
@@ -437,6 +454,65 @@ impl Channel {
         self.sweep_len()
     }
 }
+
+/// Samples decoded per refill by [`ChunkedIter`].
+const ITER_CHUNK: usize = 4096;
+
+/// Iterator over `len` samples of a channel starting at sample `first`
+/// (counted across sweeps), decoded [`ITER_CHUNK`] at a time by `fill`.
+struct ChunkedIter<'a, T> {
+    channel: &'a Channel,
+    next: usize,
+    end: usize,
+    buf: Vec<T>,
+    pos: usize,
+    fill: fn(&Channel, usize, &mut [T]),
+}
+
+impl<'a, T: Copy + Default> ChunkedIter<'a, T> {
+    fn new(
+        channel: &'a Channel,
+        first: usize,
+        len: usize,
+        fill: fn(&Channel, usize, &mut [T]),
+    ) -> Self {
+        Self {
+            channel,
+            next: first,
+            end: first.saturating_add(len),
+            buf: Vec::with_capacity(ITER_CHUNK.min(len)),
+            pos: 0,
+            fill,
+        }
+    }
+}
+
+impl<T: Copy + Default> Iterator for ChunkedIter<'_, T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        if self.pos == self.buf.len() {
+            let n = ITER_CHUNK.min(self.end - self.next);
+            if n == 0 {
+                return None;
+            }
+            self.buf.resize(n, T::default());
+            (self.fill)(self.channel, self.next, &mut self.buf);
+            self.next += n;
+            self.pos = 0;
+        }
+        let item = self.buf.get(self.pos).copied();
+        self.pos += 1;
+        item
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let left = self.buf.len() - self.pos + (self.end - self.next);
+        (left, Some(left))
+    }
+}
+
+impl<T: Copy + Default> ExactSizeIterator for ChunkedIter<'_, T> {}
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]

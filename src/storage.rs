@@ -1,5 +1,10 @@
+use crate::byte_reader::ByteReader;
 use memmap2::Mmap;
+use std::io;
 use std::sync::Arc;
+
+/// Largest chunk [`Storage::for_each_chunk`] hands out.
+pub(crate) const CHUNK_BYTES: usize = 64 * 1024;
 
 /// Backing byte storage for a parsed [`crate::Abf`], shared (via `Arc`) by
 /// every [`crate::channel::Channel`] so sample data can be decoded lazily,
@@ -11,11 +16,33 @@ pub(crate) enum Storage {
 }
 
 impl Storage {
-    pub(crate) fn bytes(&self) -> &[u8] {
+    /// A reader over the header and section bytes.
+    pub(crate) fn header(&self) -> ByteReader<'_> {
+        ByteReader::new(self.slice())
+    }
+
+    fn slice(&self) -> &[u8] {
         match self {
             Storage::Mmap(mmap) => &mmap[..],
             Storage::Owned(bytes) => bytes,
         }
+    }
+
+    /// Calls `f` on consecutive chunks of `start..start + len`, each
+    /// `chunk_len` bytes long except possibly the last. Fails with
+    /// `UnexpectedEof` if the range runs past the end of the data.
+    pub(crate) fn for_each_chunk(
+        &self,
+        start: usize,
+        len: usize,
+        chunk_len: usize,
+        f: impl FnMut(&[u8]),
+    ) -> io::Result<()> {
+        let eof = || io::Error::from(io::ErrorKind::UnexpectedEof);
+        let end = start.checked_add(len).ok_or_else(eof)?;
+        let bytes = self.slice().get(start..end).ok_or_else(eof)?;
+        bytes.chunks(chunk_len.max(1)).for_each(f);
+        Ok(())
     }
 }
 

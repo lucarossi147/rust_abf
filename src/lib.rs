@@ -164,9 +164,7 @@ impl Abf {
     }
 
     fn from_storage(storage: Arc<Storage>, path: PathBuf) -> Result<Abf, AbfError> {
-        let signature = byte_reader::ByteReader::new(storage.bytes())
-            .read_str("file_signature", 0, 4)
-            .ok();
+        let signature = storage.header().read_str("file_signature", 0, 4).ok();
         match signature {
             Some("ABF2") => Abf::from_abf_v2(storage, path),
             Some("ABF ") => Err(AbfError::UnsupportedVersion("ABF1".to_string())),
@@ -388,15 +386,33 @@ impl Abf {
         let Some(first) = self.channels.first() else {
             return;
         };
-        let Some(src) = first.frames_bytes(sweep) else {
-            // Truncated or corrupt data section: silence, as per channel.
+        let frames = first.sweep_len();
+        if self
+            .decode_frames(frames.saturating_mul(sweep), frames, outs)
+            .is_err()
+        {
+            // Unreadable or corrupt data: silence, as per channel.
             outs.iter_mut().for_each(|out| out.as_mut().fill(0.0));
-            return;
+        }
+    }
+
+    /// Single-pass decode of frames `first..first + count` (counted across
+    /// sweeps) of every channel into `outs[c][..count]`.
+    fn decode_frames<B: AsMut<[f32]>>(
+        &self,
+        first: usize,
+        count: usize,
+        outs: &mut [B],
+    ) -> std::io::Result<()> {
+        let Some(ch) = self.channels.first() else {
+            return Ok(());
         };
-        let is_f32 = first.file_kind() == FileKind::F32;
-        decode::decode_frames_blocked(src, first.stride(), is_f32, outs, |c| {
-            self.channel_params(c)
-        });
+        let (stride, is_f32) = (ch.stride(), ch.file_kind() == FileKind::F32);
+        ch.for_each_chunk_of(first, count, 0, stride, |src, range| {
+            decode::decode_frames_blocked(src, stride, is_f32, outs, range, |c| {
+                self.channel_params(c)
+            });
+        })
     }
 
     /// Like [`Abf::decode_all_channels_seq`], but spreads the work across
@@ -421,12 +437,7 @@ impl Abf {
             self.decode_all_channels_seq(sweep, outs);
             return;
         }
-        let Some(src) = first.frames_bytes(sweep) else {
-            outs.iter_mut().for_each(|out| out.fill(0.0));
-            return;
-        };
-        let stride = first.stride();
-        let is_f32 = first.file_kind() == FileKind::F32;
+        let sweep_first = frames.saturating_mul(sweep);
         // tasks[k].1[c] = frames [k*range, (k+1)*range) of channel c
         let task_count = (frames + range - 1) / range;
         let mut tasks: Vec<(usize, Vec<&mut [f32]>)> = (0..task_count)
@@ -438,11 +449,10 @@ impl Abf {
             }
         }
         parallel::for_each_maybe_par(&mut tasks, |(k, pieces)| {
-            let start = k.saturating_mul(range).saturating_mul(stride);
-            if let Some(src_k) = src.get(start..) {
-                decode::decode_frames_blocked(src_k, stride, is_f32, pieces, |c| {
-                    self.channel_params(c)
-                });
+            let count = pieces.first().map_or(0, |p| p.len());
+            let first = sweep_first.saturating_add(k.saturating_mul(range));
+            if self.decode_frames(first, count, pieces).is_err() {
+                pieces.iter_mut().for_each(|p| p.fill(0.0));
             }
         });
     }
