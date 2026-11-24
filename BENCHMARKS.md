@@ -60,8 +60,36 @@ warm and cold, and no result files written. This is the CI smoke check (`ci.yml`
 
 ### Results
 
-_To be recorded on the maintainer's Windows PC (Criterion means and
-`target\bench-results\storage_memory.md`, with the recording sizes and the disk)._
+Maintainer's PC: Intel i7-12700K, 32 GB RAM, SK hynix PC801 1 TB NVMe, Windows 11.
+Files: two real gap-free recordings (2 channels, int16, 1.25 MHz; 1.9 GB and 1.5 GB) and
+1 GiB synthetic gap-free and episodic files (`RUST_ABF_BENCH_SYNTH_MB=1024`). Criterion
+means for `from_file`, mmap (0.6.0, commit `94aeee8`) vs positional reads ([21]):
+
+| file | case | mmap warm | pread warm | mmap cold | pread cold |
+| --- | --- | ---: | ---: | ---: | ---: |
+| real 1.9 GB | `open` | 66.8 µs | 24.0 µs | 236 µs | 551 µs |
+| real 1.9 GB | `first_second` | 3.68 ms | 4.91 ms | 6.04 ms | 6.96 ms |
+| real 1.9 GB | `stream_all` | 1.43 s | 1.48 s | 2.00 s | 1.79 s |
+| real 1.5 GB | `open` | 60.5 µs | 34.5 µs | 258 µs | 503 µs |
+| real 1.5 GB | `first_second` | 3.59 ms | 6.60 ms | 5.67 ms | 7.75 ms |
+| real 1.5 GB | `stream_all` | 1.14 s | 1.22 s | 1.59 s | 1.44 s |
+| synth gap-free 1 GiB | `stream_all` | 763 ms | 1.03 s | 1.79 s | 1.15 s |
+| synth episodic 1 GiB | `stream_all` | 744 ms | 1.05 s | 1.06 s | 1.21 s |
+| synth episodic 1 GiB | `read_all_into` | 774 ms | 712 ms | 1.56 s | 1.25 s |
+| synth episodic 1 GiB | `random_sweeps` | 5.70 ms | 2.87 ms | 24.2 ms | 13.7 ms |
+
+Peak resident memory (`storage_memory`), `from_file`:
+
+| file | case | mmap | pread |
+| --- | --- | ---: | ---: |
+| real 1.9 GB | `stream_all` | 1904 MB | 4.4 MB |
+| real 1.5 GB | `stream_all` | 1543 MB | 4.5 MB |
+| synth episodic 1 GiB | `read_all_into` | 1028 MB | 4.6 MB |
+| synth episodic 1 GiB | `random_sweeps` | 10.2 MB | 4.6 MB |
+| any | `open` | 4.1–4.2 MB | 4.1 MB |
+
+`from_bytes` is unchanged by [21]: it peaks at about twice the file size (the `Vec` is
+copied into an `Arc<[u8]>`).
 
 ## Machine
 
@@ -288,3 +316,45 @@ rustc 1.95.0), so compare within this table only:
 
 `tests/memory.rs` asserts 0 bytes allocated for both `read_sweep_into` and
 `read_sweep_all_channels_into` loops with reused buffers. `open` peaks are unchanged.
+
+## Before / after [21] (positional reads instead of mmap)
+
+[21] removes the memory map: `from_file` reads the header and metadata sections at open
+and fetches sample data with positional reads (`read_at` / `seek_read`) through a 256 KiB
+stack buffer. Big-file numbers are in the storage-backend results above. On the small
+fixtures, which sit in the page cache, every read is now a system call plus a copy
+instead of a plain memory access, and reading channels one at a time copies the
+interleaved data once per channel, so reads are slower. Same machine as the storage
+results, `cargo bench --bench read`, mmap at commit `94aeee8`:
+
+| Benchmark | Fixture | mmap | pread | Change |
+| --- | --- | ---: | ---: | ---: |
+| `open` | `14o08011_ic_pair` | 34.1 µs | 27.5 µs | −19% |
+| `open` | `18425108` | 33.5 µs | 29.4 µs | −12% |
+| `read_all_sweeps_f32` | `14o08011_ic_pair` | 2.64 ms | 4.30 ms | +63% |
+| `read_all_sweeps_f32` | `18425108` | 138 µs | 206 µs | +49% |
+| `read_all_sweeps_raw` | `14o08011_ic_pair` | 1.48 ms | 2.73 ms | +85% |
+| `read_all_sweeps_raw` | `18425108` | 74 µs | 140 µs | +89% |
+| `read_all_sweeps_into` | `14o08011_ic_pair` | 1.28 ms | 2.62 ms | +106% |
+| `read_all_sweeps_into` | `18425108` | 108 µs | 163 µs | +51% |
+| `read_all_channels_into` | `14o08011_ic_pair` | 0.50 ms | 1.27 ms | +151% |
+| `read_all_channels_into` | `18425108` | 63 µs | 95 µs | +50% |
+| `sweep_all_channels` | `14o08011_ic_pair` | 2.64 ms | 3.55 ms | +35% |
+| `sweep_all_channels` | `18425108` | 115 µs | 146 µs | +27% |
+| `sweep_iter` | `14o08011_ic_pair` | 3.32 ms | 5.80 ms | +74% |
+| `sweep_iter` | `18425108` | 427 µs | 627 µs | +47% |
+
+The regression is accepted: on multi-GB recordings pread matches mmap (cold cache equal
+or faster, warm `stream_all` 3-41% slower), random sweeps are 2x faster, and resident
+memory no longer grows with the file. Small files read many times can use
+`Abf::from_bytes(std::fs::read(path)?)`, which decodes straight from memory.
+
+### Peak memory (`cargo test --release --test memory -- --nocapture --test-threads=1`)
+
+| Fixture | `from_file` peak, mmap | `from_file` peak, pread | read one sweep |
+| --- | ---: | ---: | ---: |
+| `14o08011_ic_pair.abf` | 1,540 bytes | 6,644 bytes | 2,400,000 bytes (unchanged) |
+| `18425108.abf` | 1,591 bytes | 10,542 bytes | 1,000,000 bytes (unchanged) |
+
+`from_file` now keeps the header block and the metadata sections in memory (a few KB).
+`read_sweep_into` and `read_sweep_all_channels_into` still allocate nothing.

@@ -3,6 +3,7 @@
 //! ```sh
 //! cargo run --example summary tests/test_abf/18425108.abf
 //! ```
+#![forbid(unsafe_code)]
 
 use rust_abf::Abf;
 use std::{env, path::Path, process::ExitCode};

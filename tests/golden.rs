@@ -1,6 +1,8 @@
 //! Golden reference tests. Compares rust_abf's parsed output against numeric
 //! oracles generated from pyABF (see `scripts/gen_golden.py` and
 //! `tests/golden/README.md`).
+#![forbid(unsafe_code)]
+
 use rust_abf::{Abf, AbfKind};
 use serde::Deserialize;
 use std::path::Path;

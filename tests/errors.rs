@@ -1,6 +1,8 @@
 //! Panic-free parsing tests for backlog [5] / issue #10: `Abf::from_file` must
 //! return a typed `AbfError` and must never panic, no matter how malformed or
 //! truncated the input is.
+#![forbid(unsafe_code)]
+
 use rust_abf::{Abf, AbfError};
 use std::panic;
 use std::path::Path;

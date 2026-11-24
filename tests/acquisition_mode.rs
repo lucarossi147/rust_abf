@@ -11,6 +11,8 @@
 //! These tests byte-patch a copy of `14o08011_ic_pair.abf` (which has 3
 //! synch-array entries, all of length 1_200_000) rather than adding a new
 //! fixture, per CLAUDE.md's TDD guidance for this issue.
+#![forbid(unsafe_code)]
+
 use rust_abf::{Abf, AbfError};
 
 const FIXTURE: &str = "tests/test_abf/14o08011_ic_pair.abf";

@@ -2,6 +2,7 @@
 //! 0.5.0 API rename, asserting each old name still behaves exactly like its
 //! new replacement. These aliases (and this file) are removed once the
 //! deprecation period ends.
+#![forbid(unsafe_code)]
 #![allow(deprecated)]
 
 use rust_abf::{Abf, AbfKind};

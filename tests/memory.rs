@@ -8,6 +8,10 @@
 //! Measurements are per-thread (see `tests/common/alloc_counter.rs`), so the tests can
 //! safely run in parallel. Apart from the thresholds below, this just establishes a baseline (see BENCHMARKS.md).
 
+#![deny(unsafe_code)]
+
+// `GlobalAlloc` can only be implemented with `unsafe`; this is the one exception.
+#[allow(unsafe_code)]
 #[path = "common/alloc_counter.rs"]
 mod alloc_counter;
 

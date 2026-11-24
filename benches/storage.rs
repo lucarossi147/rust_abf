@@ -2,6 +2,7 @@
 //!
 //! One Criterion benchmark (flat sampling, 10 samples) per file, case,
 //! backend and cache state. See BENCHMARKS.md.
+#![forbid(unsafe_code)]
 
 mod common;
 

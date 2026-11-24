@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use rust_abf::Abf;
 use std::hint::black_box;

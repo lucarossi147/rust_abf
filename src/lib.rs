@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+#![forbid(unsafe_code)]
 
 use std::{
     fmt,
@@ -91,15 +92,17 @@ impl fmt::Debug for Abf {
 impl Abf {
     /// Opens and parses an ABF file.
     ///
-    /// The file is memory-mapped rather than read into memory, so sample
-    /// data is decoded lazily as sweeps are requested instead of being
-    /// copied onto the heap at open time.
+    /// Only the header and the metadata sections are read at open time.
+    /// Sample data stays on disk and is read and decoded on demand, with
+    /// positional reads, so peak memory does not depend on the file's size.
+    /// For small files that are read many times, [`Abf::from_bytes`] on the
+    /// whole file avoids the per-read system calls.
     ///
     /// # Errors
     ///
     /// Returns `Err` instead of panicking on any malformed or truncated
     /// input, in particular:
-    /// - [`AbfError::Io`] if the file cannot be opened or memory-mapped.
+    /// - [`AbfError::Io`] if the file cannot be opened or read.
     /// - [`AbfError::InvalidSignature`] if the first 4 bytes are not a
     ///   recognized ABF signature.
     /// - [`AbfError::UnsupportedVersion`] if the file is a legacy ABF1 file.
@@ -110,12 +113,11 @@ impl Abf {
     ///
     /// # Caveats
     ///
-    /// Because the file is memory-mapped, modifying or truncating it on disk
-    /// while the returned `Abf` (or any `Channel` obtained from it) is still
-    /// alive is undefined behavior: the mapping may be read concurrently
-    /// with the external write, with no synchronization between the two.
-    /// Callers must not write to a file while an `Abf` opened from it is in
-    /// use.
+    /// The file stays open while the returned `Abf` (or any `Channel`
+    /// obtained from it) is alive. Modifying or truncating it in the
+    /// meantime is never undefined behavior, but reads may then return
+    /// inconsistent data; samples that can no longer be read come back as
+    /// zeros.
     ///
     /// # Examples
     ///
@@ -136,10 +138,9 @@ impl Abf {
     /// Parses ABF data already resident in memory, without touching the
     /// filesystem.
     ///
-    /// Unlike [`Abf::from_file`], this does not memory-map anything and
-    /// contains no `unsafe` code, so it works in contexts with no filesystem
-    /// access (e.g. WebAssembly) or when the bytes come from the network
-    /// rather than a local file. [`Abf::path`] returns an empty path on the
+    /// Use it when the bytes come from the network or another source rather
+    /// than a local file, or for small files read many times: sweeps are
+    /// then decoded straight from memory. [`Abf::path`] returns an empty path on the
     /// result, since there is no file it was opened from.
     ///
     /// # Errors

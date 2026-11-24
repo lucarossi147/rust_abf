@@ -3,6 +3,8 @@
 //! and must handle malformed/truncated input exactly like `Abf::from_file`
 //! does (backlog [5] / issue #10), without needing temp files since the
 //! input is already an in-memory buffer.
+#![forbid(unsafe_code)]
+
 use rust_abf::{Abf, AbfError};
 use std::panic;
 use std::path::Path;

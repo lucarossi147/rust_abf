@@ -5,6 +5,8 @@
 //!
 //! Byte-patches a copy of `18425108.abf`, per CLAUDE.md's TDD guidance,
 //! rather than adding a new fixture.
+#![forbid(unsafe_code)]
+
 use rust_abf::Abf;
 
 const FIXTURE: &str = "tests/test_abf/18425108.abf";

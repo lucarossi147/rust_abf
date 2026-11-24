@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Changed: `Abf::from_file` reads sample data with positional file reads instead of a
+  memory map (issue [21]). The crate is now `#![forbid(unsafe_code)]` and `memmap2` is
+  gone, so there are no runtime dependencies by default. Modifying or truncating a file
+  while it is open is no longer undefined behavior: unreadable samples come back as
+  zeros. Peak resident memory when streaming a whole file no longer grows with the
+  file's size (1.9 GB recording: 1904 MB → 4.4 MB). Random sweep reads are faster; reads
+  of small files already in the page cache are slower (see `BENCHMARKS.md`), and
+  `Abf::from_bytes` is the fast path for those. `sweep_iter`/`raw_sweep_iter` now
+  allocate one 64 KiB buffer when created. Building needs a unix or windows target.
 - CI: `clippy`, `test` and `coverage` now run for both default features and `--all-features`
   (so the `parallel` feature is built, tested and covered); added `golden`, `msrv`
   (`cargo +1.66 check --lib`, with and without `parallel`), `package` (no `.abf`, < 100 KB),
