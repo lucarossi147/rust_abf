@@ -2,7 +2,6 @@
 #![warn(missing_docs)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
-use memmap2::Mmap;
 use std::{
     fmt,
     fs::File,
@@ -130,8 +129,7 @@ impl Abf {
     pub fn from_file(filepath: &Path) -> Result<Abf, AbfError> {
         let path = PathBuf::from(filepath);
         let file = File::open(&path)?;
-        let memmap = unsafe { Mmap::map(&file)? };
-        let storage = Arc::new(Storage::Mmap(memmap));
+        let storage = Arc::new(Storage::open(file)?);
         Abf::from_storage(storage, path)
     }
 
@@ -547,8 +545,8 @@ mod tests {
 
     fn empty_storage() -> Arc<Storage> {
         let file = tempfile::NamedTempFile::new().unwrap();
-        let mmap = unsafe { Mmap::map(file.as_file()).unwrap() };
-        Arc::new(Storage::Mmap(mmap))
+        let storage = Storage::open(file.reopen().unwrap()).unwrap();
+        Arc::new(storage)
     }
 
     fn abf_with_channels(channels: Vec<Channel>) -> Abf {

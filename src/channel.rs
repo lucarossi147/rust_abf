@@ -520,7 +520,7 @@ pub(crate) mod test_support {
     use super::*;
     use std::io::Write;
 
-    /// Builds a single-channel `Channel` backed by a real memory-mapped
+    /// Builds a single-channel `Channel` backed by a real
     /// temporary file, so unit tests exercise the same lazy decode path as
     /// production code instead of a synthetic in-memory shortcut.
     fn build_channel(
@@ -531,8 +531,8 @@ pub(crate) mod test_support {
         let mut file = tempfile::NamedTempFile::new().expect("create temp file");
         file.write_all(bytes).expect("write temp file");
         file.flush().expect("flush temp file");
-        let mmap = unsafe { memmap2::Mmap::map(file.as_file()).expect("mmap temp file") };
-        let storage = Arc::new(Storage::Mmap(mmap));
+        let file_storage = Storage::open(file.reopen().unwrap()).unwrap();
+        let storage = Arc::new(file_storage);
         let samples_per_channel = bytes.len() / file_kind.sample_width();
         let layout = ChannelLayout {
             storage,
@@ -760,8 +760,8 @@ mod tests {
                 file.write_all(&[0, 0]).unwrap();
                 file.flush().unwrap();
             }
-            let mmap = unsafe { memmap2::Mmap::map(file.as_file()).unwrap() };
-            let storage = Arc::new(Storage::Mmap(mmap));
+            let file_storage = Storage::open(file.reopen().unwrap()).unwrap();
+            let storage = Arc::new(file_storage);
             let channel = Channel::new(
                 ChannelLayout {
                     storage,
@@ -795,8 +795,8 @@ mod tests {
             file.write_all(&bytes).unwrap();
             file.flush().unwrap();
         }
-        let mmap = unsafe { memmap2::Mmap::map(file.as_file()).unwrap() };
-        let storage = Arc::new(Storage::Mmap(mmap));
+        let file_storage = Storage::open(file.reopen().unwrap()).unwrap();
+        let storage = Arc::new(file_storage);
 
         let ch0 = Channel::new(
             ChannelLayout {

@@ -1,18 +1,39 @@
 use crate::error::AbfError;
 
-/// A bounds-checked little-endian reader over a borrowed byte buffer.
+/// A bounds-checked little-endian reader over a borrowed byte buffer, or
+/// over the pieces of a file that were read into memory.
 ///
 /// Every read validates that `offset..offset+len` fits within the buffer
-/// before touching it, so a malformed or truncated file can only ever
-/// produce an [`AbfError`], never an out-of-bounds panic.
+/// (or within one piece) before touching it, so a malformed or truncated
+/// file can only ever produce an [`AbfError`], never an out-of-bounds panic.
 #[derive(Clone, Copy)]
 pub struct ByteReader<'a> {
-    bytes: &'a [u8],
+    src: Src<'a>,
+    /// Length of the whole buffer or file.
+    len: u64,
+}
+
+#[derive(Clone, Copy)]
+enum Src<'a> {
+    Whole(&'a [u8]),
+    /// `(file offset, bytes)` pieces.
+    Pieces(&'a [(usize, Vec<u8>)]),
 }
 
 impl<'a> ByteReader<'a> {
     pub fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes }
+        Self {
+            src: Src::Whole(bytes),
+            len: bytes.len() as u64,
+        }
+    }
+
+    /// A reader over pieces of a file `len` bytes long.
+    pub fn pieces(pieces: &'a [(usize, Vec<u8>)], len: u64) -> Self {
+        Self {
+            src: Src::Pieces(pieces),
+            len,
+        }
     }
 
     fn slice(
@@ -24,9 +45,27 @@ impl<'a> ByteReader<'a> {
         let end = offset
             .checked_add(len)
             .ok_or(AbfError::Truncated { section, offset })?;
-        self.bytes
-            .get(offset..end)
-            .ok_or(AbfError::Truncated { section, offset })
+        let found = match self.src {
+            Src::Whole(bytes) => bytes.get(offset..end),
+            Src::Pieces(pieces) => pieces
+                .iter()
+                .find_map(|(at, b)| b.get(offset.checked_sub(*at)?..end.checked_sub(*at)?)),
+        };
+        found.ok_or(AbfError::Truncated { section, offset })
+    }
+
+    /// Checks that `offset..offset+len` lies within the buffer or file,
+    /// without reading it.
+    pub fn check_range(
+        &self,
+        section: &'static str,
+        offset: usize,
+        len: usize,
+    ) -> Result<(), AbfError> {
+        match offset.checked_add(len) {
+            Some(end) if end as u64 <= self.len => Ok(()),
+            _ => Err(AbfError::Truncated { section, offset }),
+        }
     }
 
     pub fn read_u8(&self, section: &'static str, offset: usize) -> Result<u8, AbfError> {
