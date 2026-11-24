@@ -10,7 +10,7 @@ compile_error!(
 
 /// Largest chunk [`Storage::for_each_chunk`] hands out: the size of the
 /// stack buffer file reads go through, so reading never allocates.
-pub(crate) const CHUNK_BYTES: usize = 64 * 1024;
+pub(crate) const CHUNK_BYTES: usize = 256 * 1024;
 
 /// The ABF2 header block, which holds the section map.
 const HEADER_BLOCK: u64 = 512;

@@ -456,7 +456,7 @@ impl Channel {
 }
 
 /// Samples decoded per refill by [`ChunkedIter`].
-const ITER_CHUNK: usize = 4096;
+const ITER_CHUNK: usize = 16 * 1024;
 
 /// Iterator over `len` samples of a channel starting at sample `first`
 /// (counted across sweeps), decoded [`ITER_CHUNK`] at a time by `fill`.
