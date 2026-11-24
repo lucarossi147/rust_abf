@@ -1,11 +1,9 @@
 name: Storage benchmarks
 
-# Checks that the storage benchmarks (issue [34]) run on Linux and uploads
-# their tables. Reference numbers are recorded on the maintainer's Windows
-# machine, not here: shared CI runners are too noisy to compare runs.
+# Manual run of the storage benchmarks (issue [34]) on Linux. Reference
+# numbers come from the maintainer's Windows machine; the smoke check runs
+# in ci.yml via `cargo test --all-targets`.
 on:
-  pull_request:
-    paths: ["benches/**", "src/**", "Cargo.toml", ".github/workflows/bench.yml"]
   workflow_dispatch:
     inputs:
       synth_mb:
@@ -16,7 +14,7 @@ on:
         default: "warm,cold"
       criterion_args:
         description: Extra Criterion arguments (e.g. a filter)
-        default: ""
+        default: "--warm-up-time 1 --measurement-time 2"
 
 env:
   CARGO_TERM_COLOR: always
@@ -25,20 +23,14 @@ jobs:
   storage:
     runs-on: ubuntu-latest
     env:
-      RUST_ABF_BENCH_SYNTH_MB: ${{ inputs.synth_mb || '64' }}
-      RUST_ABF_BENCH_CACHE: ${{ inputs.cache || 'warm,cold' }}
-      CRITERION_ARGS: ${{ inputs.criterion_args || '--warm-up-time 1 --measurement-time 2' }}
+      RUST_ABF_BENCH_SYNTH_MB: ${{ inputs.synth_mb }}
+      RUST_ABF_BENCH_CACHE: ${{ inputs.cache }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Timing
-        run: cargo bench --bench storage -- $CRITERION_ARGS
-      - name: Peak RSS
-        run: cargo bench --bench storage_memory
-      - name: Summary
-        if: always()
-        run: cat target/bench-results/*.md >> "$GITHUB_STEP_SUMMARY"
+      - run: cargo bench --bench storage -- ${{ inputs.criterion_args }}
+      - run: cargo bench --bench storage_memory
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,18 +1,6 @@
 //! Shared helpers for the storage-backend benchmarks (issue [34]):
 //! `benches/storage.rs` (timing) and `benches/storage_memory.rs` (peak RSS).
-//! See BENCHMARKS.md for how to run them.
-//!
-//! Configuration, all optional, from environment variables:
-//! - `RUST_ABF_BENCH_FILES`: real `.abf` files, as an OS path list
-//!   (`;`-separated on Windows, `:` on Linux).
-//! - `RUST_ABF_BENCH_SYNTH_MB`: sizes of synthetic files to generate, comma
-//!   separated (default `64`; empty for none). One gap-free and one episodic
-//!   file per size, cached in `target/bench-data/`.
-//! - `RUST_ABF_BENCH_CACHE`: `warm`, `cold` or both (default `warm`).
-//! - `RUST_ABF_BENCH_OWNED_MAX_MB`: skip `from_bytes` above this file size
-//!   (default 2048), since it loads the whole file into memory.
-//! - `RUST_ABF_BENCH_BUF_MAX_MB`: skip `read_all_into` when one sweep's
-//!   output buffers exceed this (default 512), e.g. a long gap-free file.
+//! Configuration (`RUST_ABF_BENCH_*` variables) and usage: see BENCHMARKS.md.
 
 // Each bench binary and the test that includes this module uses a subset.
 #![allow(dead_code)]
@@ -282,8 +270,7 @@ pub fn synth_file(dir: &Path, mb: u64, mode: SynthMode) -> io::Result<PathBuf> {
     header[DATA_MAP + 8..DATA_MAP + 16].copy_from_slice(&(entries as i64).to_le_bytes());
 
     std::fs::create_dir_all(dir)?;
-    let tmp = path.with_extension("tmp");
-    let mut out = BufWriter::with_capacity(4 << 20, File::create(&tmp)?);
+    let mut out = BufWriter::with_capacity(4 << 20, File::create(&path)?);
     out.write_all(&header)?;
     let mut state = 0x9E37_79B9_7F4A_7C15_u64 ^ mb;
     let mut chunk = Vec::with_capacity(1 << 20);
@@ -299,10 +286,7 @@ pub fn synth_file(dir: &Path, mb: u64, mode: SynthMode) -> io::Result<PathBuf> {
         out.write_all(&chunk)?;
         left -= n;
     }
-    let file = out.into_inner().map_err(|e| e.into_error())?;
-    file.sync_all()?;
-    drop(file);
-    std::fs::rename(&tmp, &path)?;
+    out.flush()?;
     Ok(path)
 }
 
@@ -328,11 +312,6 @@ impl BenchFile {
     /// Bytes of decoded `f32` output buffers for one sweep of every channel.
     pub fn sweep_buffer_bytes(&self) -> u64 {
         (self.channels * self.sweep_len * 4) as u64
-    }
-
-    /// Bytes of raw sample data in the file.
-    pub fn data_bytes(&self, bytes_per_sample: u64) -> u64 {
-        (self.channels * self.sweeps * self.sweep_len) as u64 * bytes_per_sample
     }
 }
 
@@ -475,15 +454,4 @@ pub fn evict(_: &Path) -> io::Result<()> {
         io::ErrorKind::Unsupported,
         "cold-cache benchmarks need Windows or Linux",
     ))
-}
-
-/// A short description of the machine, printed with the results.
-pub fn machine_info() -> String {
-    format!(
-        "{} {}, {} logical CPUs, rust_abf {}",
-        std::env::consts::OS,
-        std::env::consts::ARCH,
-        std::thread::available_parallelism().map_or(0, |n| n.get()),
-        env!("CARGO_PKG_VERSION"),
-    )
 }

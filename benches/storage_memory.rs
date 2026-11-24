@@ -7,13 +7,10 @@
 //! (this binary re-executed with `--child`), which samples its own resident
 //! memory every millisecond. Prints a Markdown table and writes it to
 //! `target/bench-results/storage_memory.md`.
-//!
-//! Positional arguments filter by substring of `file/case/backend`, e.g.
-//! `cargo bench --bench storage_memory -- stream_all`.
 
 mod common;
 
-use common::{bench_files, machine_info, run_case, skip_reason, Backend, Case, Config};
+use common::{bench_files, run_case, skip_reason, Backend, Case, Config};
 use std::fmt::Write as _;
 use std::path::Path;
 use std::process::Command;
@@ -28,12 +25,7 @@ fn main() {
     if let Some(i) = args.iter().position(|a| a == "--child") {
         child(&args[i + 1..]);
     } else {
-        let filters: Vec<&str> = args
-            .iter()
-            .filter(|a| !a.starts_with('-'))
-            .map(String::as_str)
-            .collect();
-        parent(&filters);
+        parent();
     }
 }
 
@@ -72,21 +64,18 @@ fn child(args: &[String]) {
     println!("{baseline} {}", peak.load(Ordering::Relaxed));
 }
 
-fn parent(filters: &[&str]) {
+fn parent() {
     let (cfg, smoke) = Config::for_this_run().unwrap_or_else(|e| fail(&e));
     let files = bench_files(&cfg).unwrap_or_else(|e| fail(&e));
     let exe = std::env::current_exe().unwrap_or_else(|e| fail(&e.to_string()));
 
-    let mut md = format!("Machine: {}\n\n", machine_info());
-    md.push_str("| file | MiB | case | backend | peak RSS MiB | over baseline MiB |\n");
+    let mut md =
+        String::from("| file | MiB | case | backend | peak RSS MiB | over baseline MiB |\n");
     md.push_str("|---|---:|---|---|---:|---:|\n");
     for file in &files {
         for &case in Case::ALL {
             for &backend in Backend::ALL {
                 let name = format!("{}/{}/{}", file.label, case.label(), backend.label());
-                if !filters.is_empty() && !filters.iter().any(|f| name.contains(f)) {
-                    continue;
-                }
                 let cells = match skip_reason(case, backend, file, &cfg) {
                     Some(reason) => format!("skipped: {reason} | |"),
                     None => {
